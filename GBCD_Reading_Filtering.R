@@ -106,8 +106,19 @@ env_counts <- Sample_Event_tbl_updated %>%
   filter(count > 1)
 # extracting rows of repeated sample ids
 env_repeats <- Sample_Event_tbl_updated %>%
-  filter(Sample_ID %in% env_counts$Sample_ID) %>%
-  arrange(Sample_ID)
+  filter(Sample_ID %in% env_counts$Sample_ID) %>%        #### 10323635, 10330547 do not have the same values for bleaching
+  arrange(Sample_ID) %>%                                #### 21121 does not have any values
+  filter(!Sample_ID %in% c(21121, 10323635, 10330547))
+# removing the repeats from the main dataframe
+Sample_Event_tbl_updated <- Sample_Event_tbl_updated %>%
+  arrange(Sample_ID) %>%
+  group_by(Sample_ID) %>%
+  filter(
+    Sample_ID %in% c(10323635, 10330547) | row_number() == 1
+  ) %>%
+  ungroup()
+Sample_Event_tbl_updated <- Sample_Event_tbl_updated %>% select(-starts_with("TRIAL"))
+
 
 
 
