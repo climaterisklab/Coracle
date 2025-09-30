@@ -119,8 +119,16 @@ Sample_Event_tbl_updated <- Sample_Event_tbl_updated %>%
   ungroup()
 Sample_Event_tbl_updated <- Sample_Event_tbl_updated %>% select(-starts_with("TRIAL"))
 
+## joining Sample_Event_tbl to Site_Info_tbl
+Site_Info_tbl_updated <- full_join(Site_Info_tbl_updated, Sample_Event_tbl_updated, 
+                                   by = c("Site_ID"))
 
+## joining bleaching and cover table to site info table updated
+Site_Info_tbl_updated <- full_join(Site_Info_tbl_updated, Bleaching_tbl_updated, by = "Sample_ID") 
+Site_Info_tbl_final <- full_join(Site_Info_tbl_updated, Cover_tbl_updated, by = "Sample_ID")
 
+## use site_info_tbl_final for raw, unfiltered data
+############## joining complete
 
 
 
