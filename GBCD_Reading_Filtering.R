@@ -130,6 +130,56 @@ Site_Info_tbl_final <- full_join(Site_Info_tbl_updated, Cover_tbl_updated, by = 
 ## use site_info_tbl_final for raw, unfiltered data
 ############## joining complete
 
+#### cleaning the data ####
+## removing irrelevant columns
+Site_Info_tbl_final <- Site_Info_tbl_final %>% select(-c(Data_Source, Site_Name, Comments.x, City_Town_Name_2, 
+                                                         City_Town_Name_3, City_Town_Name_4, Comments.y, 
+                                                         Comments, Percent_Bleaching_Old_Method, Bleaching_ID, 
+                                                         Environmental_ID, Reef_ID, City_Town_Name.x, Cover_ID, Sample_ID, 
+                                                         Quadrat_No))
+## redefining some columns
+Site_Info_tbl_final <- Site_Info_tbl_final %>%
+  rowwise() %>%
+  mutate(mean_bleaching = mean(c_across(S1_Bleaching:S4_Bleaching), na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(
+    Severity_Code = case_when(
+      mean_bleaching > 0  & mean_bleaching <= 10 ~ "Mild (1-10% Bleached)",
+      mean_bleaching > 10 & mean_bleaching <= 50 ~ "Moderate (11-50% Bleached)",
+      mean_bleaching > 50                        ~ "Severe (>50% Bleached)",
+      mean_bleaching <= 0                        ~ "No Bleaching",
+      TRUE ~ Severity_Code   # keep existing if none of the above
+    )
+  )
+
+Site_Info_tbl_final <- Site_Info_tbl_final %>%
+  mutate(Severity_Code = case_when(
+    Percent_Bleached > 0 & Percent_Bleached <= 10 ~ "Mild (1-10% Bleached)",
+    Percent_Bleached > 10 & Percent_Bleached <= 50 ~ "Moderate (11-50% Bleached)",
+    Percent_Bleached > 50 ~ "Severe (>50% Bleached)",
+    Percent_Bleached <= 0 ~ "No Bleaching",
+    TRUE ~ Severity_Code
+  ))
+
+
+Site_Info_tbl_final <- Site_Info_tbl_final %>%
+  mutate(Severity_Code = case_when(
+    Bleaching_Prevalence_Score == ">50% Reef Area Bleached" ~ "Severe (>50% Bleached)",
+    Bleaching_Prevalence_Score == "<= 10% Reef Area Bleached" ~ "Mild (1-10% Bleached)",
+    Bleaching_Prevalence_Score == "25-50% Reef Area Bleached" ~ "Moderate (11-50% Bleached)",
+    Bleaching_Prevalence_Score == "10-25% Reef Area Bleached" ~ "Moderate (11-50% Bleached)",
+    Bleaching_Prevalence_Score == "No Bleaching" ~ "No Bleaching",
+    TRUE ~ Severity_Code
+  ))
+Site_Info_tbl_final$Percent_Bleached <- ifelse(is.na(Site_Info_tbl_final$Percent_Bleached) == TRUE, 
+                                               Site_Info_tbl_final$mean_bleaching, Site_Info_tbl_final$Percent_Bleached)
+Site_Info_tbl_final <- Site_Info_tbl_final %>% select(-c(Bleaching_Prevalence_Score, mean_bleaching))
+table(Site_Info_tbl_final$Percent_Bleached, useNA = "ifany")
+table(Site_Info_tbl_final$Severity_Code, useNA = "ifany")
+
+#### site_info_tbl_final now contains all the cleaned data
+
+#### making a dataset that only contains data for bleaching events ####
 
 
 
