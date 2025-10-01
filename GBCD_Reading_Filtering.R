@@ -6,9 +6,6 @@
 library(DBI)
 library(RSQLite)
 library(tidyverse)
-##library(RColorBrewer)  # for better palettes - might not need this
-library(sf)
-library(mapview)
 
 #### read in the data #####
 # Connect to your SQLite database - this should work for everyone using Dropbox
@@ -180,14 +177,8 @@ table(Site_Info_tbl_final$Severity_Code, useNA = "ifany")
 #### site_info_tbl_final now contains all the cleaned data
 
 #### making a dataset that only contains data for bleaching events ####
-all_bleach_info <- Site_Info_tbl_final %>%
-  filter(Percent_Bleached != 'NaN') #### depth????
-
-### bring this up with Chris
-test <- Site_Info_tbl_final %>% filter(Percent_Bleached == 'NaN') %>% filter(!Severity_Code == '% unknown')
-table(test$Severity_Code)
-
 ## changing substrate and cover from wide to long format - easier for analysis and to read
+all_bleach_info <- Site_Info_tbl_final 
 all_bleach_info <- all_bleach_info %>%
   rowwise() %>%
   mutate(total_cover = sum(c_across(S1_Cover:S4_Cover), na.rm = TRUE)) %>%
@@ -232,7 +223,7 @@ all_bleach_info <- all_bleach_info %>%
 
 ## keeping sites with more than one bleaching event
 # Count how often bleaching occurs per site (e.g., Percent_Bleached > 0)
-bleach_counts <- all_bleach_info %>%
+bleach_counts <- Site_Info_tbl_final %>%
   group_by(Site_ID, Longitude_Degrees, Latitude_Degrees) %>%
   summarise(
     bleach_events = sum(!is.na(Severity_Code), na.rm = TRUE),
@@ -241,13 +232,30 @@ bleach_counts <- all_bleach_info %>%
 all_bleach_info <- all_bleach_info %>%
   filter(Site_ID %in% bleach_counts$Site_ID[bleach_counts$bleach_events > 1])
 
+## there aren't any rows that are NaN but this is just to be sure
+all_bleach_info <- all_bleach_info %>%
+  filter(Percent_Bleached != 'NaN') 
+
+## creating a percent_bleached_max column for sensitivity test 
+all_bleach_info <- all_bleach_info %>%
+  rowwise() %>%
+  mutate(Percent_Bleached_Max = max(c_across(S1_Bleaching:S4_Bleaching), na.rm = TRUE)) %>%
+  ungroup()
+
+## removing unnecessary columns
+all_bleach_info <- all_bleach_info %>% select(-c(S1_Bleaching, S2_Bleaching, S3_Bleaching, S4_Bleaching, Number__Bleached_Colonies, 
+                                                 bleach_intensity, Percent_Hard_Coral, Percent_Macroalgae))
+
+## depth filtered <10
+all_bleach_info_depth_filtered <- all_bleach_info %>%
+  filter(Depth_m <= 10)
+
 #### datasets ready to be used in a panel regression model ####
 
 
 
 
 
-#### filter by depth towards the end 
 
 
 
