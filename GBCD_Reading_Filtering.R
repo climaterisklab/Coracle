@@ -251,8 +251,9 @@ all_bleach_info_depth_filtered <- all_bleach_info %>%
   filter(Depth_m <= 10)
 
 #### datasets ready to be used in a panel regression model ####
-
-
+write_csv(Site_Info_tbl_final, "GBCD_full_data_cleaned.csv")
+write_csv(all_bleach_info, "All_Bleaching_Events_Data.csv")
+write_csv(all_bleach_info_depth_filtered, "All_Bleaching_Events_Data_Depth_Filtered.csv")
 
 
 
