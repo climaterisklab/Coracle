@@ -176,10 +176,81 @@ Site_Info_tbl_final$Percent_Bleached <- ifelse(is.na(Site_Info_tbl_final$Percent
 Site_Info_tbl_final <- Site_Info_tbl_final %>% select(-c(Bleaching_Prevalence_Score, mean_bleaching))
 table(Site_Info_tbl_final$Percent_Bleached, useNA = "ifany")
 table(Site_Info_tbl_final$Severity_Code, useNA = "ifany")
-
+#write_csv(Site_Info_tbl_final, "GBCD_full_data_cleaned.csv")
 #### site_info_tbl_final now contains all the cleaned data
 
 #### making a dataset that only contains data for bleaching events ####
+all_bleach_info <- Site_Info_tbl_final %>%
+  filter(Percent_Bleached != 'NaN') #### depth????
+
+### bring this up with Chris
+test <- Site_Info_tbl_final %>% filter(Percent_Bleached == 'NaN') %>% filter(!Severity_Code == '% unknown')
+table(test$Severity_Code)
+
+## changing substrate and cover from wide to long format - easier for analysis and to read
+all_bleach_info <- all_bleach_info %>%
+  rowwise() %>%
+  mutate(total_cover = sum(c_across(S1_Cover:S4_Cover), na.rm = TRUE)) %>%
+  ungroup() %>%
+  pivot_wider(
+    names_from = Substrate_Type,
+    values_from = total_cover,
+    values_fill = NA,             # fill missing with 0
+    values_fn = sum              # <-- combine duplicates by summing
+  )
+
+all_bleach_info$`Hard Coral` <- ifelse(is.na(all_bleach_info$S1_Cover) == TRUE & is.na(all_bleach_info$S2_Cover) == TRUE & 
+                                         is.na(all_bleach_info$S3_Cover) == TRUE & 
+                                         is.na(all_bleach_info$S4_Cover) == TRUE, NA, all_bleach_info$`Hard Coral`)
+
+all_bleach_info$`Nutrient Indicator Algae` <- ifelse(is.na(all_bleach_info$S1_Cover) == TRUE & is.na(all_bleach_info$S2_Cover) == TRUE & 
+                                                       is.na(all_bleach_info$S3_Cover) == TRUE & 
+                                                       is.na(all_bleach_info$S4_Cover) == TRUE, NA, all_bleach_info$`Nutrient Indicator Algae`)
+
+all_bleach_info$`Fleshy Seaweed` <- ifelse(is.na(all_bleach_info$S1_Cover) == TRUE & is.na(all_bleach_info$S2_Cover) == TRUE & 
+                                             is.na(all_bleach_info$S3_Cover) == TRUE & 
+                                             is.na(all_bleach_info$S4_Cover) == TRUE, NA, all_bleach_info$`Fleshy Seaweed`)
+
+all_bleach_info <- all_bleach_info %>% select(-c(`NA`, S1_Cover, S2_Cover, S3_Cover, S4_Cover))
+
+
+## i want to condense hard coral, nutrient indicator algae and fleshy seaweed into one row if site, year, month and bleaching level are the same
+substrate_cols <- c("Hard Coral", "Nutrient Indicator Algae", "Fleshy Seaweed")
+
+all_bleach_info <- all_bleach_info %>%
+  group_by(Site_ID, Date_Year, Date_Month, Bleaching_Level) %>% 
+  summarise(
+    across(all_of(substrate_cols), ~ {
+      if (all(is.na(.x))) NA_real_ else max(.x, na.rm = TRUE)
+    }),
+    across(-all_of(substrate_cols), ~ first(.x)),   # keep all other cols
+    .groups = "drop"
+  )
+## filtering to only population level bleaching data
+all_bleach_info <- all_bleach_info %>%
+  filter(Bleaching_Level == 'Population')
+
+## keeping sites with more than one bleaching event
+# Count how often bleaching occurs per site (e.g., Percent_Bleached > 0)
+bleach_counts <- all_bleach_info %>%
+  group_by(Site_ID, Longitude_Degrees, Latitude_Degrees) %>%
+  summarise(
+    bleach_events = sum(!is.na(Severity_Code), na.rm = TRUE),
+    .groups = "drop"
+  )
+all_bleach_info <- all_bleach_info %>%
+  filter(Site_ID %in% bleach_counts$Site_ID[bleach_counts$bleach_events > 1])
+
+#### datasets ready to be used in a panel regression model ####
+
+
+
+
+
+#### filter by depth towards the end 
+
+
+
 
 
 
