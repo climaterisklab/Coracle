@@ -256,6 +256,8 @@ write_csv(all_bleach_info, "All_Bleaching_Events_Data.csv")
 write_csv(all_bleach_info_depth_filtered, "All_Bleaching_Events_Data_Depth_Filtered.csv")
 
 
+## other EDA scripts saved on Puja's OneDrive <- this script is the cleaned version 
+
 
 
 
