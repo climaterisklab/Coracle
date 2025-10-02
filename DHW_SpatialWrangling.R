@@ -73,7 +73,56 @@ full_panel_data$dhw <- pbsapply(1:nrow(full_panel_data), function(i) {
   
   return(val)
 })
-## saving this panel data
-write.csv(full_panel_data, "Panel_Data_DHW.csv")
 
+#### creating DHW lags from 0 - 5 months ####
+## efficient lag function - batch extraction
+# 1. Extract full time series (with NAs)
+# 1. Extract full time series for all sites in one call
+all_vals <- terra::extract(
+  rasterbrick_dhw,
+  full_panel_data[, c("Longitude_Degrees", "Latitude_Degrees")]
+)
+
+# Drop the ID column
+all_vals <- as.matrix(all_vals[, -1])
+
+# 2. Create lagged variables with progress bar
+lags <- -1:5
+lagged_df <- pblapply(lags, function(L) {
+  shifted_idx <- idx - L
+  valid <- !is.na(shifted_idx) & shifted_idx > 0 & shifted_idx <= ncol(all_vals)
+  vals <- rep(NA_real_, length(idx))
+  vals[valid] <- all_vals[cbind(seq_along(idx)[valid], shifted_idx[valid])]
+  vals
+})
+
+# 3. Attach lagged columns to full_panel_data and fill NAs using buffer
+for (j in seq_along(lags)) {
+  col_name <- paste0("dhw_lag", lags[j])
+  full_panel_data[[col_name]] <- lagged_df[[j]]
+  
+  # Fill remaining NAs with buffer extraction
+  na_indices <- which(is.na(full_panel_data[[col_name]]))
+  if (length(na_indices) > 0) {
+    full_panel_data[[col_name]][na_indices] <- pbsapply(na_indices, function(i) {
+      layer_idx <- idx[i] - lags[j]
+      if (is.na(layer_idx) || layer_idx < 1 || layer_idx > nlyr(rasterbrick_dhw)) return(NA)
+      
+      point <- terra::vect(
+        cbind(full_panel_data$Longitude_Degrees[i], full_panel_data$Latitude_Degrees[i]),
+        crs = terra::crs(rasterbrick_dhw)
+      )
+      
+      buff <- terra::buffer(point, width = 10000)
+      vals <- terra::extract(rasterbrick_dhw[[layer_idx]], buff)[, 2]
+      non_na_vals <- vals[!is.na(vals)]
+      if (length(non_na_vals) > 0) return(non_na_vals[1])
+      return(NA)
+    })
+  }
+}
+
+
+## saving this panel data
+write.csv(full_panel_data, "Panel_Data_AllDHW.csv")
 
