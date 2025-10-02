@@ -76,7 +76,6 @@ full_panel_data$dhw <- pbsapply(1:nrow(full_panel_data), function(i) {
 
 #### creating DHW lags from 0 - 5 months ####
 ## efficient lag function - batch extraction
-# 1. Extract full time series (with NAs)
 # 1. Extract full time series for all sites in one call
 all_vals <- terra::extract(
   rasterbrick_dhw,
