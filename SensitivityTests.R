@@ -10,6 +10,8 @@ library(fixest)
 #### load datasets ####
 all_bleaching_events <- read.csv("All_Bleaching_Events_Data.csv")
 all_bleaching_events_depth_filtered <- read.csv("All_Bleaching_Events_Data_Depth_Filtered.csv")
+All_Bleaching_Events_Data_AllDHW <- read.csv("All_Bleaching_Events_Data_AllDHW.csv")
+
 
 
 #### different model types ####
@@ -85,8 +87,28 @@ summary(model_all_depths)
 summary(model_depth_10andless)           # 0.002 difference between the two models, both significant
 
 
-
 #### lag sensitivity test ####
+model_lagminus1 <- fepois(Percent_Bleached ~ dhw_lag.1 | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
+                 data = All_Bleaching_Events_Data_AllDHW)
+model_lag0 <- fepois(Percent_Bleached ~ dhw_lag0 | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
+                     data = All_Bleaching_Events_Data_AllDHW)
+model_lag1 <- fepois(Percent_Bleached ~ dhw_lag1 | Site_ID + Date_Year, cluster = ~Ecoregion_Name,
+                     data = All_Bleaching_Events_Data_AllDHW)
+model_lag2 <- fepois(Percent_Bleached ~ dhw_lag2 | Site_ID + Date_Year, cluster = ~Ecoregion_Name,
+                     data = All_Bleaching_Events_Data_AllDHW)
+model_lag3 <- fepois(Percent_Bleached ~ dhw_lag3 | Site_ID + Date_Year, cluster = ~Ecoregion_Name,
+                     data = All_Bleaching_Events_Data_AllDHW)
+model_lag4 <- fepois(Percent_Bleached ~ dhw_lag4 | Site_ID + Date_Year, cluster = ~Ecoregion_Name,
+                     data = All_Bleaching_Events_Data_AllDHW)
+model_lag5 <- fepois(Percent_Bleached ~ dhw_lag5 | Site_ID + Date_Year, cluster = ~Ecoregion_Name,
+                     data = All_Bleaching_Events_Data_AllDHW)
+summary(model_lagminus1)   # significant
+summary(model_lag0)        # significant
+summary(model_lag1)        # significant
+summary(model_lag2)        # significant
+summary(model_lag3)        # not significant
+summary(model_lag4)        # not significant
+summary(model_lag5)        # not significant
 
 
 
