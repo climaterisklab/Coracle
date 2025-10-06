@@ -9,6 +9,8 @@ library(fixest)
 
 #### load datasets ####
 all_bleaching_events <- read.csv("All_Bleaching_Events_Data.csv")
+all_bleaching_events_depth_filtered <- read.csv("All_Bleaching_Events_Data_Depth_Filtered.csv")
+
 
 #### different model types ####
 model_linear <- feols(Percent_Bleached ~ SSTA_DHW | Site_ID + Date_Year, cluster = ~Ecoregion_Name, data = all_bleaching_events)
@@ -75,10 +77,12 @@ summary(model_latitude_int)     ### not significant
 
 
 #### depth sensitivity test ####
-
-
-
-
+model_all_depths <- fepois(Percent_Bleached ~ SSTA_DHW | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
+                          data = all_bleaching_events)
+model_depth_10andless <- fepois(Percent_Bleached ~ SSTA_DHW | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
+                                data = all_bleaching_events_depth_filtered)
+summary(model_all_depths)
+summary(model_depth_10andless)           # 0.002 difference between the two models, both significant
 
 
 
