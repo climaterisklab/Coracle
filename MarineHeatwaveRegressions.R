@@ -1,5 +1,6 @@
 ### author: Puja Pande
-### date: 01 October 2025
-### 
+### date: 06 October 2025
+### GMST - marine heatwave regressions
 
-library(fixest)
+#### load libraries ####
+
