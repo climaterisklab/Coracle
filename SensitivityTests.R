@@ -57,13 +57,21 @@ summary(model_poisson_log)
 all_bleaching_events_edited <- all_bleaching_events %>% group_by(Site_ID) %>% 
   mutate(site_temp_ave = mean(ClimSST, na.rm = TRUE)) %>% ungroup() %>% mutate(site_temp_ave_int = site_temp_ave*SSTA_DHW) %>% 
   ungroup()
+all_bleaching_events_edited <- all_bleaching_events_edited %>% group_by(Site_ID) %>% 
+  mutate(depth_int = Depth_m*SSTA_DHW) %>% ungroup() 
+all_bleaching_events_edited <- all_bleaching_events_edited %>% group_by(Site_ID) %>% 
+  mutate(lat_int = Latitude_Degrees*SSTA_DHW) %>% ungroup() 
 
 model_site_temp_ave_int <- fepois(Percent_Bleached ~ SSTA_DHW + site_temp_ave_int | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
                                   data = all_bleaching_events_edited)
-summary(model_site_temp_ave_int).     ### not significant
+model_depth_int <- fepois(Percent_Bleached ~ SSTA_DHW + depth_int | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
+                                  data = all_bleaching_events_edited)
+model_latitude_int <- fepois(Percent_Bleached ~ SSTA_DHW + lat_int | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
+                                  data = all_bleaching_events_edited)
 
-
-
+summary(model_site_temp_ave_int)     ### not significant
+summary(model_depth_int)     ### not significant
+summary(model_latitude_int)     ### not significant
 
 
 #### depth sensitivity test ####
