@@ -110,6 +110,14 @@ summary(model_lag3)        # not significant
 summary(model_lag4)        # not significant
 summary(model_lag5)        # not significant
 
+## max lag
+All_Bleaching_Events_Data_AllDHW <- All_Bleaching_Events_Data_AllDHW %>% rowwise() %>%
+  mutate(dhw_val_max = max(c_across(starts_with("dhw_lag")), na.rm = TRUE)) %>%
+  ungroup()
+model_lag_max <- fixest::fepois(Percent_Bleached ~ dhw_val_max | Site_ID + Date_Year, 
+                                cluster = ~Ecoregion_Name,
+                                data = All_Bleaching_Events_Data_AllDHW)
+summary(model_lag_max) ## significant but 0 lag better
 
 
 
