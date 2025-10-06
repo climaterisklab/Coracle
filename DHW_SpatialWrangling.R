@@ -33,7 +33,9 @@ names(rasterbrick_dhw) <- paste0("DHW", format(date_seq, "%m-%Y"))
 
 
 #### reading in the panel data to extract DHW values or closest non-NA DHW values ####
+## doing this for the entire GBCD dataset and the all_bleaching_events dataset
 full_panel_data <- read.csv("~/Library/CloudStorage/Dropbox/Coracle/Cleaned GCBD Datasets/GBCD_full_data_cleaned.csv")
+full_panel_data <- read.csv("~/Library/CloudStorage/Dropbox/Coracle/Cleaned GCBD Datasets/All_Bleaching_Events_Data.csv")
 
 #### extracting DHW values for each row in the panel data ####
 # Add year-month column
@@ -124,4 +126,5 @@ for (j in seq_along(lags)) {
 
 ## saving this panel data
 write.csv(full_panel_data, "Panel_Data_AllDHW.csv")
+write.csv(full_panel_data, "All_Bleaching_Events_Data_AllDHW.csv")
 
