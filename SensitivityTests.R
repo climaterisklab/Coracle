@@ -103,7 +103,7 @@ model_lag4 <- fepois(Percent_Bleached ~ dhw_lag4 | Site_ID + Date_Year, cluster 
 model_lag5 <- fepois(Percent_Bleached ~ dhw_lag5 | Site_ID + Date_Year, cluster = ~Ecoregion_Name,
                      data = All_Bleaching_Events_Data_AllDHW)
 summary(model_lagminus1)   # significant
-summary(model_lag0)        # significant
+summary(model_lag0)        # significant           ## best lag - 0 = lag 1 as by Chris, normal lag as per NOAA
 summary(model_lag1)        # significant
 summary(model_lag2)        # significant
 summary(model_lag3)        # not significant
