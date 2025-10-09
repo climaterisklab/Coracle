@@ -120,4 +120,86 @@ model_lag_max <- fixest::fepois(Percent_Bleached ~ dhw_val_max | Site_ID + Date_
 summary(model_lag_max) ## significant but 0 lag better
 
 
+#### plotting the main model ####
+library(ggplot2)
+library(fixest)
 
+# Get the coefficient and SE for log1p(SSTA_DHW)
+coef_dhw <- coef(model_poisson_log)["log1p(SSTA_DHW)"]
+se_dhw <- se(model_poisson_log)["log1p(SSTA_DHW)"]
+
+# Generate DHW range
+dhw_range <- seq(0, max(all_bleaching_events$SSTA_DHW, na.rm = TRUE), length.out = 100)
+
+# Calculate linear predictor and CI on log scale
+log_dhw <- log1p(dhw_range)
+linear_pred <- coef_dhw * log_dhw
+linear_lower <- (coef_dhw - 1.96 * se_dhw) * log_dhw
+linear_upper <- (coef_dhw + 1.96 * se_dhw) * log_dhw
+
+# Transform to response scale (exp for Poisson)
+# Note: This is relative to baseline (fixed effects at 0)
+pred_df <- data.frame(
+  SSTA_DHW = dhw_range,
+  relative_risk = exp(linear_pred),
+  lower = exp(linear_lower),
+  upper = exp(linear_upper)
+)
+
+# Plot relative risk
+ggplot(pred_df, aes(x = SSTA_DHW)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper),
+              alpha = 0.3, fill = "steelblue") +
+  geom_line(aes(y = relative_risk),
+            color = "steelblue", size = 1.2) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "gray40") +
+  labs(
+    x = "Degree Heating Weeks (DHW)",
+    y = "Relative Risk of Bleaching (Percent Bleached)",
+    title = "Effect of DHW on Coral Bleaching",
+    subtitle = "Relative to baseline (DHW = 0) with 95% CI"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    axis.title = element_text(size = 12)
+  )
+
+#### model summary ####
+modelsummary(
+  list(
+    "Linear" = model_linear,
+    "Log(DHW)" = model_log,
+    "Poisson" = model_poisson,
+    "Poisson Log(DHW)" = model_poisson_log,
+    "Temp × DHW" = model_site_temp_ave_int,
+    "Depth × DHW" = model_depth_int,
+    "Latitude × DHW" = model_latitude_int,
+    "All Depths" = model_all_depths,
+    "Depth ≤10m" = model_depth_10andless,
+    "Lag -1" = model_lagminus1,
+    "Lag 0" = model_lag0,
+    "Lag 1" = model_lag1,
+    "Lag 2" = model_lag2,
+    "Lag 3" = model_lag3,
+    "Lag 4" = model_lag4,
+    "Lag 5" = model_lag5,
+    "Max Lag" = model_lag_max
+  ),
+  stars = c('*' = 0.1, '**' = 0.05, '***' = 0.01),
+  coef_rename = c(
+    "SSTA_DHW" = "DHW",
+    "log1p(SSTA_DHW)" = "log(DHW + 1)",
+    "site_temp_ave_int" = "Site Temp × DHW",
+    "depth_int" = "Depth × DHW",
+    "lat_int" = "Latitude × DHW",
+    "dhw_lag.1" = "DHW (Lag -1)",
+    "dhw_lag0" = "DHW (Lag 0)",
+    "dhw_lag1" = "DHW (Lag 1)",
+    "dhw_lag2" = "DHW (Lag 2)",
+    "dhw_lag3" = "DHW (Lag 3)",
+    "dhw_lag4" = "DHW (Lag 4)",
+    "dhw_lag5" = "DHW (Lag 5)",
+    "dhw_val_max" = "DHW (Max)"
+  )
+)
