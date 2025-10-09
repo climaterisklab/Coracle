@@ -31,6 +31,7 @@ date_seq <- seq(start_date, end_date, by = "month")
 # Create names like DHW4-1985, DHW5-1985, ... , DHW10-2023
 names(rasterbrick_dhw) <- paste0("DHW", format(date_seq, "%m-%Y"))
 
+writeRaster(rasterbrick_dhw, filename = "rasterbrick_dhw.tif")
 
 #### reading in the panel data to extract DHW values or closest non-NA DHW values ####
 ## doing this for the entire GBCD dataset and the all_bleaching_events dataset
