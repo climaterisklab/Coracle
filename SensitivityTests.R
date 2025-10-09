@@ -155,7 +155,7 @@ ggplot(pred_df, aes(x = SSTA_DHW)) +
   geom_hline(yintercept = 1, linetype = "dashed", color = "gray40") +
   labs(
     x = "Degree Heating Weeks (DHW)",
-    y = "Relative Risk of Bleaching (Percent Bleached)",
+    y = "Relative Risk of Bleaching",
     title = "Effect of DHW on Coral Bleaching",
     subtitle = "Relative to baseline (DHW = 0) with 95% CI"
   ) +
