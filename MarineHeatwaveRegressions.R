@@ -85,7 +85,7 @@ for (loc_id in seq_len(nrow(unique_locations))) {
   
   lon <- loc_data$lon[1]
   lat <- loc_data$lat[1]
-
+  
   # Loop over months
   for (month_num in 1:12) {
     
@@ -129,9 +129,11 @@ for (loc_id in seq_len(nrow(unique_locations))) {
         month_name = month.name[month_num],
         n_obs = nrow(merged_df),
         mean_dhw = mean(merged_df$mean_dhw, na.rm = TRUE),
-        beta = coef_summary[2, 1],
-        beta_se = coef_summary[2, 2],
-        p_value = coef_summary[2, 4],
+        alpha = coef_summary[1, 1],        # intercept (constant term)
+        alpha_se = coef_summary[1, 2],     # intercept standard error
+        beta = coef_summary[2, 1],         # slope for GMT
+        beta_se = coef_summary[2, 2],      # slope SE
+        p_value = coef_summary[2, 4],      # p-value for GMT
         aic = AIC(lm_fit)
       )
       
@@ -147,10 +149,13 @@ end_time <- Sys.time()
 cat("Model fitting complete in", 
     round(as.numeric(difftime(end_time, start_time, units = "mins")), 2), 
     "minutes\n")
+
 #### combine results ####
 final_poisson_results <- bind_rows(model_results)
+
 # Save results to CSV
 write.csv(final_poisson_results, "GMST_DHW_Poisson_Results.csv", row.names = FALSE)
+
 
 #### quick plots ####
 # Histogram of beta coefficients
