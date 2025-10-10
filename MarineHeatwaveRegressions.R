@@ -149,9 +149,22 @@ cat("Model fitting complete in",
     "minutes\n")
 #### combine results ####
 final_poisson_results <- bind_rows(model_results)
-
-
+# Save results to CSV
 write.csv(final_poisson_results, "GMST_DHW_Poisson_Results.csv", row.names = FALSE)
 
-
-
+#### quick plots ####
+# Histogram of beta coefficients
+hist(final_poisson_results$beta, breaks = 50, main = "Histogram of Beta Coefficients", xlab = "Beta Coefficient")
+# Histogram of p-values
+hist(final_poisson_results$p_value, breaks = 50, main = "Histogram of P-values", xlab = "P-value")
+# Scatter plot of beta vs mean DHW
+plot(final_poisson_results$mean_dhw, final_poisson_results$beta, 
+     main = "Beta vs Mean DHW", xlab = "Mean DHW", ylab = "Beta Coefficient")
+# Boxplot of beta by month
+boxplot(beta ~ month_name, data = final_poisson_results, 
+        main = "Beta Coefficients by Month", xlab = "Month", ylab = "Beta Coefficient", 
+        las = 2)
+# Boxplot of p-value by month
+boxplot(p_value ~ month_name, data = final_poisson_results, 
+        main = "P-values by Month", xlab = "Month", ylab = "P-value", 
+        las = 2)
