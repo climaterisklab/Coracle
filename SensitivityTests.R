@@ -5,7 +5,7 @@
 #### load libraries ####
 library(dplyr)
 library(fixest)
-
+library(ggplot2)
 
 #### load datasets ####
 all_bleaching_events <- read.csv("All_Bleaching_Events_Data.csv")
@@ -65,6 +65,8 @@ all_bleaching_events_edited <- all_bleaching_events_edited %>% group_by(Site_ID)
   mutate(depth_int = Depth_m*SSTA_DHW) %>% ungroup() 
 all_bleaching_events_edited <- all_bleaching_events_edited %>% group_by(Site_ID) %>% 
   mutate(lat_int = Latitude_Degrees*SSTA_DHW) %>% ungroup() 
+all_bleaching_events_edited <- all_bleaching_events_edited %>% group_by(Site_ID) %>% 
+  mutate(turbidity_int = Turbidity*SSTA_DHW) %>% ungroup() 
 
 model_site_temp_ave_int <- fepois(Percent_Bleached ~ SSTA_DHW + site_temp_ave_int | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
                                   data = all_bleaching_events_edited)
@@ -72,10 +74,13 @@ model_depth_int <- fepois(Percent_Bleached ~ SSTA_DHW + depth_int | Site_ID + Da
                                   data = all_bleaching_events_edited)
 model_latitude_int <- fepois(Percent_Bleached ~ SSTA_DHW + lat_int | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
                                   data = all_bleaching_events_edited)
+model_turbidity_int <- fepois(Percent_Bleached ~ SSTA_DHW + turbidity_int | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
+                             data = all_bleaching_events_edited)
 
 summary(model_site_temp_ave_int)     ### not significant
 summary(model_depth_int)     ### not significant
 summary(model_latitude_int)     ### not significant
+summary(model_turbidity_int)  ### significant
 
 
 #### depth sensitivity test ####
@@ -85,6 +90,17 @@ model_depth_10andless <- fepois(Percent_Bleached ~ SSTA_DHW | Site_ID + Date_Yea
                                 data = all_bleaching_events_depth_filtered)
 summary(model_all_depths)
 summary(model_depth_10andless)           # 0.002 difference between the two models, both significant
+
+## sites with multiple measurements at the same depth
+depth_same <- all_bleaching_events %>%
+  group_by(Site_ID, Depth_m) %>%
+  filter(n() > 1) %>%
+  ungroup()
+
+model_same_depth <- fepois(Percent_Bleached ~ SSTA_DHW | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
+                               data = depth_same)
+summary(model_same_depth)  
+
 
 
 #### lag sensitivity test ####
@@ -120,16 +136,24 @@ model_lag_max <- fixest::fepois(Percent_Bleached ~ dhw_val_max | Site_ID + Date_
 summary(model_lag_max) ## significant but 0 lag better
 
 
+#### generating some more sensitivity tests ####
+## using negative binomial instead of poisson
+model_negative_binomial <- fenegbin(Percent_Bleached ~ log1p(SSTA_DHW) | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
+                                    data = all_bleaching_events)
+summary(model_negative_binomial)         ## ver similar to poisson
+
+
 #### plotting the main model ####
-library(ggplot2)
-library(fixest)
+## final model 
+final_model <- fepois(Percent_Bleached ~ log1p(dhw) | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
+                            data = All_Bleaching_Events_Data_AllDHW)
 
 # Get the coefficient and SE for log1p(SSTA_DHW)
-coef_dhw <- coef(model_poisson_log)["log1p(SSTA_DHW)"]
-se_dhw <- se(model_poisson_log)["log1p(SSTA_DHW)"]
+coef_dhw <- coef(final_model)["log1p(dhw)"]
+se_dhw <- se(final_model)["log1p(dhw)"]
 
 # Generate DHW range
-dhw_range <- seq(0, max(all_bleaching_events$SSTA_DHW, na.rm = TRUE), length.out = 100)
+dhw_range <- seq(0, max(All_Bleaching_Events_Data_AllDHW$dhw, na.rm = TRUE), length.out = 100)
 
 # Calculate linear predictor and CI on log scale
 log_dhw <- log1p(dhw_range)
@@ -166,24 +190,29 @@ ggplot(pred_df, aes(x = SSTA_DHW)) +
   )
 
 #### model summary ####
+library(modelsummary)
+
 modelsummary(
   list(
     "Linear" = model_linear,
     "Log(DHW)" = model_log,
     "Poisson" = model_poisson,
     "Poisson Log(DHW)" = model_poisson_log,
+    "Negative Binomial (Log DHW)" = model_negative_binomial,
     "Temp × DHW" = model_site_temp_ave_int,
     "Depth × DHW" = model_depth_int,
     "Latitude × DHW" = model_latitude_int,
+    "Turbidity × DHW" = model_turbidity_int,
     "All Depths" = model_all_depths,
-    "Depth ≤10m" = model_depth_10andless,
-    "Lag -1" = model_lagminus1,
-    "Lag 0" = model_lag0,
-    "Lag 1" = model_lag1,
-    "Lag 2" = model_lag2,
-    "Lag 3" = model_lag3,
-    "Lag 4" = model_lag4,
-    "Lag 5" = model_lag5,
+    "Depth ≤ 10m" = model_depth_10andless,
+    "Same Depth Sites" = model_same_depth,
+    "Lag 0" = model_lagminus1,
+    "Lag 1" = model_lag0,
+    "Lag 2" = model_lag1,
+    "Lag 3" = model_lag2,
+    "Lag 4" = model_lag3,
+    "Lag 5" = model_lag4,
+    "Lag 6" = model_lag5,
     "Max Lag" = model_lag_max
   ),
   stars = c('*' = 0.1, '**' = 0.05, '***' = 0.01),
@@ -193,13 +222,50 @@ modelsummary(
     "site_temp_ave_int" = "Site Temp × DHW",
     "depth_int" = "Depth × DHW",
     "lat_int" = "Latitude × DHW",
-    "dhw_lag.1" = "DHW (Lag -1)",
-    "dhw_lag0" = "DHW (Lag 0)",
-    "dhw_lag1" = "DHW (Lag 1)",
-    "dhw_lag2" = "DHW (Lag 2)",
-    "dhw_lag3" = "DHW (Lag 3)",
-    "dhw_lag4" = "DHW (Lag 4)",
-    "dhw_lag5" = "DHW (Lag 5)",
+    "turbidity_int" = "Turbidity × DHW",
+    "dhw_lag.1" = "DHW (Lag 0)",
+    "dhw_lag0" = "DHW (Lag 1)",
+    "dhw_lag1" = "DHW (Lag 2)",
+    "dhw_lag2" = "DHW (Lag 3)",
+    "dhw_lag3" = "DHW (Lag 4)",
+    "dhw_lag4" = "DHW (Lag 5)",
+    "dhw_lag5" = "DHW (Lag 6)",
     "dhw_val_max" = "DHW (Max)"
-  )
+  ),
+  statistic = NULL,  # <— removes standard errors, t/z-stats, and p-values
+  gof_omit = 'AIC|Log.Lik|F|RMSE|R2|R2 Adj.|R2 Within|R2 Within Adj.|BIC|Std.Errors', # cleaner table
+  output = "model_summary.html" # optional: saves to file for presentation
 )
+
+
+
+
+#### some more plots - predicted percent bleaching vs DHW #### 
+# Get predictions and merge back with the original data
+# First, identify which rows were used (no NAs in key variables)
+model_data <- All_Bleaching_Events_Data_AllDHW %>%
+  filter(!is.na(Percent_Bleached) & !is.na(dhw)) %>%
+  # Add predictions - fixest will only predict for rows it can use
+  mutate(predicted_bleaching = predict(final_model, newdata = ., type = "response"))
+
+# Remove any remaining NAs from predictions (from dropped fixed effects)
+model_data <- model_data %>%
+  filter(!is.na(predicted_bleaching))
+
+# Now plot
+ggplot(model_data, aes(x = dhw)) +
+  geom_point(aes(y = Percent_Bleached), alpha = 0.3, color = "gray50", size = 1) +
+  geom_smooth(aes(y = predicted_bleaching), 
+              method = "loess", color = "steelblue", size = 1.2, se = TRUE) +
+  labs(
+    x = "Degree Heating Weeks (DHW)",
+    y = "Percent Bleached",
+    title = "Predicted Percent Bleaching vs DHW",
+    subtitle = "Points show actual observations, blue line shows model predictions"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    axis.title = element_text(size = 12)
+  )
+
