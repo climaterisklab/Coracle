@@ -7,6 +7,7 @@ library(terra)
 library(dplyr)
 library(lubridate)
 library(tidyr)
+library(ggplot2)
 
 #### load gmst and DHW data ####
 gmst_data <- read.csv("~/Library/CloudStorage/Dropbox/Coracle/ERA5_GMT.csv") %>% select(-X) %>%
@@ -164,28 +165,21 @@ final_poisson_results <- left_join(
 )
 
 
-
 # Save results to CSV
 write.csv(final_poisson_results, "GMST_DHW_Poisson_Results.csv", row.names = FALSE)
 final_poisson_results <- read.csv("GMST_DHW_Poisson_Results.csv")
 
 
 
-
-
 #### quick plots ####
-# Histogram of beta coefficients
+## Histogram of beta coefficients
 hist(final_poisson_results$beta, breaks = 50, main = "Histogram of Beta Coefficients", xlab = "Beta Coefficient")
-# Histogram of p-values
-hist(final_poisson_results$p_value, breaks = 50, main = "Histogram of P-values", xlab = "P-value")
-# Scatter plot of beta vs mean DHW
+## Scatter plot of beta vs mean DHW
 plot(final_poisson_results$mean_dhw, final_poisson_results$beta, 
      main = "Beta vs Mean DHW", xlab = "Mean DHW", ylab = "Beta Coefficient")
-# Boxplot of beta by month
+## Boxplot of beta by month
 boxplot(beta ~ month_name, data = final_poisson_results, 
         main = "Beta Coefficients by Month", xlab = "Month", ylab = "Beta Coefficient", 
         las = 2)
-# Boxplot of p-value by month
-boxplot(p_value ~ month_name, data = final_poisson_results, 
-        main = "P-values by Month", xlab = "Month", ylab = "P-value", 
-        las = 2)
+
+## more important plots 

@@ -82,6 +82,16 @@ summary(model_depth_int)     ### not significant
 summary(model_latitude_int)     ### not significant
 summary(model_turbidity_int)  ### significant
 
+#### cluster sensitivity test ####
+model_cluster_none <- fepois(Percent_Bleached ~ SSTA_DHW | Site_ID + Date_Year, data = all_bleaching_events)
+model_cluster_ecoregion <- fepois(Percent_Bleached ~ SSTA_DHW | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
+                                  data = all_bleaching_events)
+model_cluster_site <- fepois(Percent_Bleached ~ SSTA_DHW | Site_ID + Date_Year, cluster = ~Site_ID,
+                                  data = all_bleaching_events)
+summary(model_cluster_none)        
+summary(model_cluster_ecoregion)   
+summary(model_cluster_site)        
+
 
 #### depth sensitivity test ####
 model_all_depths <- fepois(Percent_Bleached ~ SSTA_DHW | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
@@ -213,7 +223,10 @@ modelsummary(
     "Lag 4" = model_lag3,
     "Lag 5" = model_lag4,
     "Lag 6" = model_lag5,
-    "Max Lag" = model_lag_max
+    "Max Lag" = model_lag_max,
+    "Cluster: None" = model_cluster_none,
+    "Cluster: Ecoregion" = model_cluster_ecoregion,
+    "Cluster: Site" = model_cluster_site
   ),
   stars = c('*' = 0.1, '**' = 0.05, '***' = 0.01),
   coef_rename = c(
@@ -232,9 +245,9 @@ modelsummary(
     "dhw_lag5" = "DHW (Lag 6)",
     "dhw_val_max" = "DHW (Max)"
   ),
-  statistic = NULL,  # <— removes standard errors, t/z-stats, and p-values
-  gof_omit = 'AIC|Log.Lik|F|RMSE|R2|R2 Adj.|R2 Within|R2 Within Adj.|BIC|Std.Errors', # cleaner table
-  output = "model_summary.html" # optional: saves to file for presentation
+  statistic = NULL,  # removes SEs, z-stats, and p-values
+  gof_omit = 'AIC|Log.Lik|F|RMSE|R2|R2 Adj.|R2 Within|R2 Within Adj.|BIC|Std.Errors', 
+  output = "model_summary.html"
 )
 
 
