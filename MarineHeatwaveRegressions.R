@@ -153,8 +153,24 @@ cat("Model fitting complete in",
 #### combine results ####
 final_poisson_results <- bind_rows(model_results)
 
+dhw_unique <- dhw_data[, 1:3] %>%
+  group_by(Longitude_Degrees, Latitude_Degrees) %>%
+  summarise(across(everything(), mean, na.rm = TRUE), .groups = "drop")
+
+final_poisson_results <- left_join(
+  final_poisson_results,
+  dhw_unique[, 1:3],
+  join_by(longitude == Longitude_Degrees, latitude == Latitude_Degrees)
+)
+
+
+
 # Save results to CSV
 write.csv(final_poisson_results, "GMST_DHW_Poisson_Results.csv", row.names = FALSE)
+final_poisson_results <- read.csv("GMST_DHW_Poisson_Results.csv")
+
+
+
 
 
 #### quick plots ####
