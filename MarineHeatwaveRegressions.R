@@ -183,3 +183,69 @@ boxplot(beta ~ month_name, data = final_poisson_results,
         las = 2)
 
 ## more important plots 
+# Beta coefficients on world map
+library(leaflet)
+library(viridisLite)
+
+# Create a list of raster layers for each month
+raster_list <- list()
+
+for (m in unique(final_poisson_results$month_name)) {
+  month_data <- final_poisson_results %>% filter(month_name == m)
+  if (nrow(month_data) == 0) next
+  
+  points_spat <- vect(month_data[, c("longitude", "latitude", "beta")],
+                      geom = c("longitude", "latitude"), crs = "EPSG:4326")
+  beta_raster <- rasterize(points_spat, world_grid, field = "beta", fun = mean)
+  
+  raster_list[[m]] <- beta_raster
+}
+
+# Create leaflet map
+leaf <- leaflet() %>%
+  addTiles() %>%
+  addProviderTiles("CartoDB.Positron")
+
+# Combine all raster values into a single vector
+all_values <- unlist(lapply(raster_list, terra::values))
+val_range <- range(all_values, na.rm = TRUE)
+buffer <- diff(val_range) * 0.05  # 5% buffer on each side
+
+pal <- colorNumeric(
+  palette = inferno(256),
+  domain = val_range,
+  na.color = "transparent"
+)
+
+
+# Create the leaflet map and add layers
+leaf <- leaflet() %>%
+  addProviderTiles("CartoDB.Positron")
+
+# Add each month's raster as a separate layer
+for (m in names(raster_list)) {
+  leaf <- leaf %>%
+    addRasterImage(
+      raster_list[[m]],
+      colors = pal,
+      opacity = 0.8,
+      group = m
+    )
+}
+
+# Add layer control (month selector) and legend
+leaf <- leaf %>%
+  addLayersControl(
+    baseGroups = names(raster_list),
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  addLegend(
+    position = "bottomright",
+    pal = pal,
+    values = all_values,
+    title = expression(beta)
+  )
+
+leaf
+
+
