@@ -231,12 +231,12 @@ pal <- colorNumeric(
   domain = domain,
   na.color = "transparent"
 )
-
-pal <- colorNumeric(
-  palette = colorRampPalette(c("#08306B", "#252525", "#99000D"))(256),  # deep navy → charcoal → dark crimson
-  domain = domain,
-  na.color = "transparent"
-)
+# 
+# pal <- colorNumeric(
+#   palette = colorRampPalette(c("#08306B", "#252525", "#99000D"))(256),  # deep navy → charcoal → dark crimson
+#   domain = domain,
+#   na.color = "transparent"
+# )
 
 
 # Initialize leaflet map with dark basemap
