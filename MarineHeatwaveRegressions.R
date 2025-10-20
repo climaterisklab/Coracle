@@ -184,45 +184,67 @@ boxplot(beta ~ month_name, data = final_poisson_results,
 
 ## more important plots 
 # Beta coefficients on world map
+### Beta Coefficients on Global Map ----------------------------------------
+
+# Load required libraries
+library(terra)
+library(dplyr)
 library(leaflet)
 library(viridisLite)
 
-# Create a list of raster layers for each month
+# Create raster list
 raster_list <- list()
 
+# Define global grid (0.25° x 0.25°) based on all coordinate ranges
+global_ext <- terra::ext(
+  range(final_poisson_results$longitude, na.rm = TRUE),
+  range(final_poisson_results$latitude, na.rm = TRUE)
+)
+world_grid <- terra::rast(global_ext, resolution = 0.25, crs = "EPSG:4326")
+
+# Rasterize monthly beta values
 for (m in unique(final_poisson_results$month_name)) {
   month_data <- final_poisson_results %>% filter(month_name == m)
   if (nrow(month_data) == 0) next
   
-  points_spat <- vect(month_data[, c("longitude", "latitude", "beta")],
-                      geom = c("longitude", "latitude"), crs = "EPSG:4326")
-  beta_raster <- rasterize(points_spat, world_grid, field = "beta", fun = mean)
+  points_spat <- terra::vect(
+    month_data[, c("longitude", "latitude", "beta")],
+    geom = c("longitude", "latitude"),
+    crs = "EPSG:4326"
+  )
   
+  beta_raster <- terra::rasterize(points_spat, world_grid, field = "beta", fun = mean)
   raster_list[[m]] <- beta_raster
 }
 
-# Create leaflet map
-leaf <- leaflet() %>%
-  addTiles() %>%
-  addProviderTiles("CartoDB.Positron")
-
-# Combine all raster values into a single vector
+# Combine raster values for color scaling
 all_values <- unlist(lapply(raster_list, terra::values))
 val_range <- range(all_values, na.rm = TRUE)
-buffer <- diff(val_range) * 0.05  # 5% buffer on each side
+
+# Ensure color scale is symmetric around 0
+max_abs <- max(abs(val_range), na.rm = TRUE)
+domain <- c(-max_abs, max_abs)
+
+# Define diverging color palette (dark blue → neutral → dark red)
+pal <- colorNumeric(
+  palette = colorRampPalette(c("darkblue", "white", "darkred"))(256),  # neutral dark gray for 0
+  domain = domain,
+  na.color = "transparent"
+)
 
 pal <- colorNumeric(
-  palette = inferno(256),
-  domain = val_range,
+  palette = colorRampPalette(c("#08306B", "#252525", "#99000D"))(256),  # deep navy → charcoal → dark crimson
+  domain = domain,
   na.color = "transparent"
 )
 
 
-# Create the leaflet map and add layers
+# Initialize leaflet map with dark basemap
 leaf <- leaflet() %>%
+  #addProviderTiles("CartoDB.DarkMatterNoLabels") %>%
   addProviderTiles("CartoDB.Positron")
 
-# Add each month's raster as a separate layer
+# Add each month’s raster as a separate selectable layer
 for (m in names(raster_list)) {
   leaf <- leaf %>%
     addRasterImage(
@@ -233,7 +255,7 @@ for (m in names(raster_list)) {
     )
 }
 
-# Add layer control (month selector) and legend
+# Add layer control and legend
 leaf <- leaf %>%
   addLayersControl(
     baseGroups = names(raster_list),
@@ -246,6 +268,9 @@ leaf <- leaf %>%
     title = expression(beta)
   )
 
+# Display map
 leaf
+
+
 
 

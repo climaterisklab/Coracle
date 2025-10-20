@@ -257,11 +257,3 @@ write_csv(all_bleach_info_depth_filtered, "All_Bleaching_Events_Data_Depth_Filte
 
 
 ## other EDA scripts saved on Puja's OneDrive <- this script is the cleaned version 
-
-
-
-
-
-
-
-
