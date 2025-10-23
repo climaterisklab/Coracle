@@ -7,6 +7,8 @@ library(dplyr)
 library(fixest)
 library(ggplot2)
 library(tidyr)
+library(patchwork)
+library(plotly)
 
 #### load datasets ####
 #all_bleaching_events <- read.csv("All_Bleaching_Events_Data.csv")
@@ -351,4 +353,143 @@ ggplot(plot_data, aes(x = dhw)) +
   )
 
 
+
+#### ecoregion curves ####
+#### STEP 0: Define regional groups ####
+
+regions_caribbean <- c(
+  "Hispaniola, Puerto Rico and Lesser Antilles",
+  "Bahamas and Florida Keys",
+  "Belize and west Caribbean",
+  "Netherlands Antilles and south Caribbean",
+  "Cuba and Cayman Islands",
+  "Jamaica"
+)
+
+regions_gbr <- c(
+  "Central and northern Great Barrier Reef",
+  "Southern Great Barrier Reef",
+  "Coral Sea"
+)
+
+regions_coral_triangle <- c(
+  "Sunda Shelf, south-east Asia", "Gulf of Thailand", "Lesser Sunda Islands and Savu Sea",
+  "Java Sea", "Banda Sea and Molucca Islands", "Gulf of Tomini, Indonesia",
+  "Makassar Strait, Indonesia", "West Sumatra", "South Java",
+  "Cenderawasih Bay, Papua", "Birds Head Peninsula, Papua", "Celebes Sea",
+  "Sulu Sea", "South-east Philippines", "North Philippines",
+  "Solomon Islands and Bougainville", "Milne Bay, Papua New Guinea", "Bismarck Sea, New Guinea"
+)
+
+regions_east_africa <- c(
+  "Kenya and Tanzania coast", "North Mozambique coast",
+  "North Madagascar", "South Madagascar", "Mayotte and Comoros"
+)
+
+regions_maldives <- c("Maldive Islands")
+
+regions_focus <- c(
+  regions_caribbean,
+  regions_gbr,
+  regions_coral_triangle,
+  regions_east_africa,
+  regions_maldives
+)
+
+#### STEP 1: Prepare data ####
+
+model_data <- All_Bleaching_Events_Data_AllDHW %>%
+  filter(
+    !is.na(Percent_Bleached),
+    !is.na(dhw),
+    Ecoregion_Name %in% regions_focus
+  ) %>%
+  mutate(pred_poisson_log = predict(model_poisson_log, newdata = ., type = "response")) %>%
+  filter(!is.na(pred_poisson_log)) 
+
+#### STEP 2: Ecoregion summary ####
+
+ecoregion_stats <- model_data %>%
+  group_by(Ecoregion_Name) %>%
+  summarise(
+    n_obs = n(),
+    n_sites = n_distinct(Site_ID),
+    mean_dhw = mean(dhw, na.rm = TRUE),
+    mean_bleaching = mean(Percent_Bleached, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(n_obs))
+
+cat("\n=== SELECTED ECOREGIONS SUMMARY ===\n")
+print(ecoregion_stats)
+
+# 
+# ecoregion_stats_filtered <- ecoregion_stats %>%
+#   filter(n_obs > 100)
+# 
+# 
+# selected_ecoregions <- ecoregion_stats_filtered$Ecoregion_Name
+# 
+# model_data <- model_data %>%
+#   filter(Ecoregion_Name %in% selected_ecoregions)
+
+
+#### STEP 3: Faceted plot for focus regions ####
+
+p_faceted <- ggplot(model_data, aes(x = dhw)) +
+  geom_point(aes(y = Percent_Bleached),
+             alpha = 0.4, color = "gray50", size = 0.8) +
+  geom_smooth(aes(y = pred_poisson_log),
+              method = "loess", color = "red", size = 1, se = TRUE, span = 0.8) +
+  facet_wrap(~ Ecoregion_Name, scales = "free_y", ncol = 4) +
+  labs(
+    x = "Degree Heating Weeks (DHW)",
+    y = "Percent Bleached",
+    title = "Predicted Coral Bleaching by Ecoregion (Poisson Log Model)",
+    subtitle = "Gray points = observed bleaching | Red line = model predictions with 95% CI"
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    strip.text = element_text(face = "bold", size = 8),
+    panel.grid.minor = element_blank()
+  )
+
+print(p_faceted)
+
+
+#### STEP 5: Marginal effect comparison ####
+
+ecoregion_slopes <- model_data %>%
+  group_by(Ecoregion_Name) %>%
+  summarise(
+    n_obs = n(),
+    mean_dhw = mean(dhw, na.rm = TRUE),
+    mean_pred = mean(pred_poisson_log, na.rm = TRUE),
+    beta = coef(model_poisson_log)["log1p(dhw)"],
+    marginal_effect = beta * mean_pred / (1 + mean_dhw),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(marginal_effect))
+
+p_slopes <- ggplot(ecoregion_slopes,
+                   aes(x = reorder(Ecoregion_Name, marginal_effect),
+                       y = marginal_effect, fill = marginal_effect)) +
+  geom_col(alpha = 0.8) +
+  coord_flip() +
+  scale_fill_gradient2(
+    low = "#2c7bb6", mid = "#ffffbf", high = "#d7191c",
+    midpoint = median(ecoregion_slopes$marginal_effect),
+    name = "Marginal\nEffect"
+  ) +
+  labs(
+    title = "Bleaching Sensitivity by Ecoregion (Focus Regions)",
+    subtitle = "Marginal effect: % bleaching increase per 1 DHW increase",
+    x = NULL,
+    y = "Marginal Effect (% bleaching per DHW)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", size = 14))
+
+print(p_slopes)
 
