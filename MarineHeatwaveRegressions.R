@@ -98,7 +98,7 @@ for (loc_id in seq_len(nrow(unique_locations))) {
     # Aggregate to yearly
     ts_yearly <- ts_month %>%
       group_by(year) %>%
-      summarise(mean_dhw = mean(dhw, na.rm = TRUE), .groups = 'drop')
+      summarise(mean_dhw = round(mean(dhw, na.rm = TRUE), 0), .groups = 'drop')
     
     # Join with GMST
     merged_df <- ts_yearly %>%
@@ -120,6 +120,35 @@ for (loc_id in seq_len(nrow(unique_locations))) {
       
       coef_summary <- summary(lm_fit)$coefficients
       
+      # ===== GOODNESS OF FIT METRICS =====
+      
+      # 1. Deviance-based metrics
+      null_dev <- lm_fit$null.deviance
+      resid_dev <- lm_fit$deviance
+      df_null <- lm_fit$df.null
+      df_resid <- lm_fit$df.residual
+      
+      # Deviance goodness-of-fit p-value
+      deviance_pval <- pchisq(resid_dev, df_resid, lower.tail = FALSE)
+      
+      # Pseudo R-squared (McFadden)
+      pseudo_r2 <- 1 - (resid_dev / null_dev)
+      
+      # 2. Dispersion parameter
+      dispersion <- resid_dev / df_resid
+      
+      # 3. Pearson chi-square test
+      pearson_resid <- residuals(lm_fit, type = "pearson")
+      pearson_chisq <- sum(pearson_resid^2)
+      pearson_pval <- pchisq(pearson_chisq, df_resid, lower.tail = FALSE)
+      
+      # 4. AIC and BIC
+      model_aic <- AIC(lm_fit)
+      model_bic <- BIC(lm_fit)
+      
+      # 5. Log-likelihood
+      log_lik <- logLik(lm_fit)[1]
+      
       result_count <- result_count + 1
       
       result_row <- data.frame(
@@ -130,12 +159,26 @@ for (loc_id in seq_len(nrow(unique_locations))) {
         month_name = month.name[month_num],
         n_obs = nrow(merged_df),
         mean_dhw = mean(merged_df$mean_dhw, na.rm = TRUE),
-        alpha = coef_summary[1, 1],        # intercept (constant term)
-        alpha_se = coef_summary[1, 2],     # intercept standard error
-        beta = coef_summary[2, 1],         # slope for GMT
-        beta_se = coef_summary[2, 2],      # slope SE
-        p_value = coef_summary[2, 4],      # p-value for GMT
-        aic = AIC(lm_fit)
+        
+        # Model coefficients
+        alpha = coef_summary[1, 1],
+        alpha_se = coef_summary[1, 2],
+        beta = coef_summary[2, 1],
+        beta_se = coef_summary[2, 2],
+        p_value = coef_summary[2, 4],
+        
+        # Goodness of fit metrics
+        aic = model_aic,
+        bic = model_bic,
+        log_likelihood = log_lik,
+        null_deviance = null_dev,
+        residual_deviance = resid_dev,
+        deviance_pval = deviance_pval,
+        pseudo_r2 = pseudo_r2,
+        dispersion = dispersion,
+        pearson_chisq = pearson_chisq,
+        pearson_pval = pearson_pval,
+        df_residual = df_resid
       )
       
       model_results[[result_count]] <- result_row
@@ -166,8 +209,9 @@ final_poisson_results <- left_join(
 
 
 # Save results to CSV
-write.csv(final_poisson_results, "GMST_DHW_Poisson_Results.csv", row.names = FALSE)
-final_poisson_results <- read.csv("GMST_DHW_Poisson_Results.csv")
+# Save results
+write.csv(final_poisson_results, "poisson_model_results_with_gof.csv", row.names = FALSE)
+final_poisson_results <- read.csv("poisson_model_results_with_gof.csv")
 
 
 
@@ -274,3 +318,170 @@ leaf
 
 
 
+#### looking at model fits ####
+final_poisson_results$bic <- NULL
+final_poisson_results$log_likelihood <- NULL
+final_poisson_results$aic <- NULL
+
+
+
+
+# Filter for insignificant points (p-value > 0.05)
+insig_data <- final_poisson_results %>% 
+  filter(p_value > 0.05)
+
+# Create raster list
+raster_list_insig <- list()
+
+# Define global grid (0.25° x 0.25°) based on all coordinate ranges
+global_ext <- terra::ext(
+  range(final_poisson_results$longitude, na.rm = TRUE),
+  range(final_poisson_results$latitude, na.rm = TRUE)
+)
+world_grid <- terra::rast(global_ext, resolution = 0.25, crs = "EPSG:4326")
+
+# Rasterize monthly insignificant counts
+for (m in unique(insig_data$month_name)) {
+  month_data <- insig_data %>% filter(month_name == m)
+  if (nrow(month_data) == 0) next
+  
+  points_spat <- terra::vect(
+    month_data[, c("longitude", "latitude")],
+    geom = c("longitude", "latitude"),
+    crs = "EPSG:4326"
+  )
+  
+  # Add a count field (1 per insignificant observation)
+  points_spat$insig <- 1
+  
+  # Rasterize by summing counts of insignificant sites per cell
+  insig_raster <- terra::rasterize(points_spat, world_grid, field = "insig", fun = sum)
+  raster_list_insig[[m]] <- insig_raster
+}
+
+# Combine raster values for color scaling
+all_values_insig <- unlist(lapply(raster_list_insig, terra::values))
+val_range_insig <- range(all_values_insig, na.rm = TRUE)
+
+# Define color palette (light yellow → dark red)
+pal_insig <- colorNumeric(
+  palette = colorRampPalette(c("black", "yellow"))(256),
+  domain = val_range_insig,
+  na.color = "transparent"
+)
+
+# Initialize leaflet map (light base map for contrast)
+leaf_insig <- leaflet() %>%
+  addProviderTiles("CartoDB.Positron")
+
+# Add each month’s raster as a separate selectable layer
+for (m in names(raster_list_insig)) {
+  leaf_insig <- leaf_insig %>%
+    addRasterImage(
+      raster_list_insig[[m]],
+      colors = pal_insig,
+      opacity = 0.8,
+      group = m
+    )
+}
+
+# Add layer control and legend
+leaf_insig <- leaf_insig %>%
+  addLayersControl(
+    baseGroups = names(raster_list_insig),
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  addLegend(
+    position = "bottomright",
+    pal = pal_insig,
+    values = all_values_insig,
+    title = "Count of Insignificant Cells"
+  )
+
+# Display map
+leaf_insig
+
+
+# Deviance residuals vs fitted values
+plot(fitted(lm_fit), residuals(lm_fit, type = "deviance"),
+     xlab = "Fitted values", ylab = "Deviance residuals",
+     main = "Residuals vs Fitted Values")
+abline(h = 0, col = "red", lty = 2)
+
+
+
+
+#### chi-squared plots ####
+#### monthly Pearson χ² maps ####
+
+library(terra)
+library(dplyr)
+library(leaflet)
+library(viridisLite)
+
+# Create a list to store monthly rasters
+raster_list_chisq <- list()
+
+# Define global grid (same as before)
+global_ext <- terra::ext(
+  range(final_poisson_results$longitude, na.rm = TRUE),
+  range(final_poisson_results$latitude, na.rm = TRUE)
+)
+world_grid <- terra::rast(global_ext, resolution = 0.25, crs = "EPSG:4326")
+
+# Rasterize mean Pearson χ² per grid cell for each month
+for (m in unique(final_poisson_results$month_name)) {
+  month_data <- final_poisson_results %>% filter(month_name == m)
+  if (nrow(month_data) == 0) next
+  
+  points_spat <- terra::vect(
+    month_data[, c("longitude", "latitude", "pearson_chisq")],
+    geom = c("longitude", "latitude"),
+    crs = "EPSG:4326"
+  )
+  
+  chisq_raster <- terra::rasterize(points_spat, world_grid, field = "pearson_chisq", fun = mean)
+  raster_list_chisq[[m]] <- chisq_raster
+}
+
+# Combine raster values for color scaling
+all_values_chisq <- unlist(lapply(raster_list_chisq, terra::values))
+val_range_chisq <- range(all_values_chisq, na.rm = TRUE)
+
+# Define a diverging palette (blue → white → red)
+pal_chisq <- colorNumeric(
+  palette = colorRampPalette(c("darkblue", "white", "darkred"))(256),
+  domain = val_range_chisq,
+  na.color = "transparent"
+)
+
+# Initialize leaflet map
+leaf_chisq <- leaflet() %>%
+  addProviderTiles("CartoDB.Positron")
+
+# Add monthly raster layers
+for (m in names(raster_list_chisq)) {
+  leaf_chisq <- leaf_chisq %>%
+    addRasterImage(
+      raster_list_chisq[[m]],
+      colors = pal_chisq,
+      opacity = 0.8,
+      group = m
+    )
+}
+
+# Add layer control and legend
+leaf_chisq <- leaf_chisq %>%
+  addLayersControl(
+    baseGroups = names(raster_list_chisq),
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  addLegend(
+    position = "bottomright",
+    pal = pal_chisq,
+    values = all_values_chisq,
+    title = expression("Mean Pearson χ"^2)
+  )
+
+# Display the interactive map
+leaf_chisq

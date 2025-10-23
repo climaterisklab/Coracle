@@ -153,6 +153,21 @@ model_negative_binomial <- fenegbin(Percent_Bleached ~ log1p(SSTA_DHW) | Site_ID
 summary(model_negative_binomial)         ## ver similar to poisson
 
 
+
+#### rounding off percent bleaching to make it a proper count variable ####
+
+All_Bleaching_Events_Data_AllDHW <- All_Bleaching_Events_Data_AllDHW %>%
+  mutate(
+    Percent_Bleached_Counts = case_when(
+      Percent_Bleached > 0 & Percent_Bleached < 1 ~ 1,
+      TRUE ~ round(Percent_Bleached)
+    )
+  )
+
+final_model_counts <- fepois(Percent_Bleached_Counts ~ log1p(dhw) | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
+                      data = All_Bleaching_Events_Data_AllDHW)
+
+
 #### plotting the main model ####
 ## final model 
 final_model <- fepois(Percent_Bleached ~ log1p(dhw) | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
@@ -202,54 +217,69 @@ ggplot(pred_df, aes(x = SSTA_DHW)) +
 #### model summary ####
 library(modelsummary)
 
+#### comprehensive model summary ####
+
 modelsummary(
   list(
-    "Linear" = model_linear,
-    "Log(DHW)" = model_log,
-    "Poisson" = model_poisson,
-    "Poisson Log(DHW)" = model_poisson_log,
+    # ---- Base Models ----
+    "Linear"                    = model_linear,
+    "Log(DHW)"                  = model_log,
+    "Poisson"                   = model_poisson,
+    "Poisson Log(DHW)"          = model_poisson_log,
     "Negative Binomial (Log DHW)" = model_negative_binomial,
-    "Temp × DHW" = model_site_temp_ave_int,
-    "Depth × DHW" = model_depth_int,
-    "Latitude × DHW" = model_latitude_int,
-    "Turbidity × DHW" = model_turbidity_int,
-    "All Depths" = model_all_depths,
-    "Depth ≤ 10m" = model_depth_10andless,
-    "Same Depth Sites" = model_same_depth,
-    "Lag 0" = model_lagminus1,
-    "Lag 1" = model_lag0,
-    "Lag 2" = model_lag1,
-    "Lag 3" = model_lag2,
-    "Lag 4" = model_lag3,
-    "Lag 5" = model_lag4,
-    "Lag 6" = model_lag5,
-    "Max Lag" = model_lag_max,
-    "Cluster: None" = model_cluster_none,
-    "Cluster: Ecoregion" = model_cluster_ecoregion,
-    "Cluster: Site" = model_cluster_site
+    
+    # ---- Interaction Models ----
+    "Temp × DHW"                = model_site_temp_ave_int,
+    "Depth × DHW"               = model_depth_int,
+    "Latitude × DHW"            = model_latitude_int,
+    "Turbidity × DHW"           = model_turbidity_int,
+    
+    # ---- Depth Sensitivity ----
+    "All Depths"                = model_all_depths,
+    "Depth ≤ 10m"               = model_depth_10andless,
+    "Same Depth Sites"          = model_same_depth,
+    
+    # ---- Lag Sensitivity ----
+    "Lag 0"                    = model_lagminus1,
+    "Lag 1"                     = model_lag0,
+    "Lag 2"                     = model_lag1,
+    "Lag 3"                     = model_lag2,
+    "Lag 4"                     = model_lag3,
+    "Lag 5"                     = model_lag4,
+    "Lag 6"                     = model_lag5,
+    "Max Lag"                   = model_lag_max,
+    
+    # ---- Clustering Sensitivity ----
+    "Cluster: None"             = model_cluster_none,
+    "Cluster: Ecoregion"        = model_cluster_ecoregion,
+    "Cluster: Site"             = model_cluster_site,
+    
+    # ---- Final Models ----
+    "Final Model (Percent Bleached)" = final_model,
+    "Final Model (Counts)"      = final_model_counts
   ),
   stars = c('*' = 0.1, '**' = 0.05, '***' = 0.01),
   coef_rename = c(
-    "SSTA_DHW" = "DHW",
-    "log1p(SSTA_DHW)" = "log(DHW + 1)",
+    "SSTA_DHW"       = "DHW",
+    "log1p(SSTA_DHW)"= "log(DHW + 1)",
+    "log1p(dhw)"     = "log(DHW + 1)",
     "site_temp_ave_int" = "Site Temp × DHW",
-    "depth_int" = "Depth × DHW",
-    "lat_int" = "Latitude × DHW",
-    "turbidity_int" = "Turbidity × DHW",
-    "dhw_lag.1" = "DHW (Lag 0)",
-    "dhw_lag0" = "DHW (Lag 1)",
-    "dhw_lag1" = "DHW (Lag 2)",
-    "dhw_lag2" = "DHW (Lag 3)",
-    "dhw_lag3" = "DHW (Lag 4)",
-    "dhw_lag4" = "DHW (Lag 5)",
-    "dhw_lag5" = "DHW (Lag 6)",
-    "dhw_val_max" = "DHW (Max)"
+    "depth_int"       = "Depth × DHW",
+    "lat_int"         = "Latitude × DHW",
+    "turbidity_int"   = "Turbidity × DHW",
+    "dhw_lag0"       = "DHW (Lag -1)",
+    "dhw_lag1"        = "DHW (Lag 0)",
+    "dhw_lag2"        = "DHW (Lag 1)",
+    "dhw_lag3"        = "DHW (Lag 2)",
+    "dhw_lag4"        = "DHW (Lag 3)",
+    "dhw_lag5"        = "DHW (Lag 4)",
+    "dhw_lag6"        = "DHW (Lag 5)",
+    "dhw_val_max"     = "DHW (Max)"
   ),
-  statistic = NULL,  # removes SEs, z-stats, and p-values
-  gof_omit = 'AIC|Log.Lik|F|RMSE|R2|R2 Adj.|R2 Within|R2 Within Adj.|BIC|Std.Errors', 
-  output = "model_summary.html"
+  statistic = NULL,  # removes SEs, z-stats, and p-values for clarity
+  gof_omit = 'AIC|Log.Lik|F|RMSE|R2|R2 Adj.|R2 Within|R2 Within Adj.|BIC|Std.Errors',
+  output = "model_summary_all.html"
 )
-
 
 
 
