@@ -6,6 +6,7 @@
 library(dplyr)
 library(fixest)
 library(ggplot2)
+library(tidyr)
 
 #### load datasets ####
 #all_bleaching_events <- read.csv("All_Bleaching_Events_Data.csv")
@@ -167,6 +168,9 @@ All_Bleaching_Events_Data_AllDHW <- All_Bleaching_Events_Data_AllDHW %>%
 final_model_counts <- fepois(Percent_Bleached_Counts ~ log1p(dhw) | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
                       data = All_Bleaching_Events_Data_AllDHW)
 
+## final model 
+final_model <- fepois(Percent_Bleached ~ log1p(dhw) | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
+                      data = All_Bleaching_Events_Data_AllDHW)
 
 #### model summary ####
 library(modelsummary)
@@ -237,54 +241,6 @@ modelsummary(
 
 
 #### plotting the main model ####
-## final model 
-final_model <- fepois(Percent_Bleached ~ log1p(dhw) | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
-                      data = All_Bleaching_Events_Data_AllDHW)
-
-# Get the coefficient and SE for log1p(dhw)
-coef_dhw <- coef(final_model)["log1p(dhw)"]
-se_dhw <- se(final_model)["log1p(dhw)"]
-
-# Generate DHW range
-dhw_range <- seq(0, max(All_Bleaching_Events_Data_AllDHW$dhw, na.rm = TRUE), length.out = 100)
-
-# Calculate linear predictor and CI on log scale
-log_dhw <- log1p(dhw_range)
-linear_pred <- coef_dhw * log_dhw
-linear_lower <- (coef_dhw - 1.96 * se_dhw) * log_dhw
-linear_upper <- (coef_dhw + 1.96 * se_dhw) * log_dhw
-
-# Transform to response scale (exp for Poisson)
-# Note: This is relative to baseline (fixed effects at 0)
-pred_df <- data.frame(
-  dhw = dhw_range,
-  relative_risk = exp(linear_pred),
-  lower = exp(linear_lower),
-  upper = exp(linear_upper)
-)
-
-# Plot relative risk
-ggplot(pred_df, aes(x = dhw)) +
-  geom_ribbon(aes(ymin = lower, ymax = upper),
-              alpha = 0.3, fill = "steelblue") +
-  geom_line(aes(y = relative_risk),
-            color = "steelblue", size = 1.2) +
-  geom_hline(yintercept = 1, linetype = "dashed", color = "gray40") +
-  labs(
-    x = "Degree Heating Weeks (DHW)",
-    y = "Relative Risk of Bleaching",
-    title = "Effect of DHW on Coral Bleaching",
-    subtitle = "Relative to baseline (DHW = 0) with 95% CI"
-  ) +
-  theme_minimal() +
-  theme(
-    plot.title = element_text(face = "bold", size = 14),
-    axis.title = element_text(size = 12)
-  )
-
-
-#### some more plots - predicted percent bleaching vs DHW #### 
-# Get predictions and merge back with the original data
 # First, identify which rows were used (no NAs in key variables)
 model_data <- All_Bleaching_Events_Data_AllDHW %>%
   filter(!is.na(Percent_Bleached) & !is.na(dhw)) %>%
@@ -313,147 +269,86 @@ ggplot(model_data, aes(x = dhw)) +
   )
 
 
+#### Comparative model visualization ####
+# Base data for prediction (no missing DHW or bleaching)
+model_data <- All_Bleaching_Events_Data_AllDHW %>%
+  filter(!is.na(Percent_Bleached), !is.na(dhw))
+
+## did not add negatuve binomial no log because percent bleaching goes over 100
+
+# Add predictions from all relevant models
+model_data <- model_data %>%
+  mutate(
+    pred_linear                = predict(model_linear, newdata = ., type = "response"),
+    pred_log                   = predict(model_log, newdata = ., type = "response"),
+    pred_poisson               = predict(model_poisson, newdata = ., type = "response"),
+    pred_poisson_log           = predict(model_poisson_log, newdata = ., type = "response"),
+    pred_negative_binomial     = predict(model_negative_binomial, newdata = ., type = "response")
+  )
+
+# Filter out rows with missing predictions (common for FE models)
+model_data <- model_data %>%
+  filter(
+    !is.na(pred_linear),
+    !is.na(pred_log),
+    !is.na(pred_poisson),
+    !is.na(pred_poisson_log),
+    !is.na(pred_negative_binomial)
+  )
+
+# Reshape to long format for ggplot
+plot_data <- model_data %>%
+  dplyr::select(
+    dhw, Percent_Bleached,
+    pred_linear, pred_log,
+    pred_poisson, pred_poisson_log,
+    pred_negative_binomial
+  ) %>%
+  tidyr::pivot_longer(
+    cols = dplyr::starts_with("pred_"),
+    names_to = "model",
+    values_to = "predicted_bleaching"
+  ) %>%
+  dplyr::mutate(model = dplyr::recode(
+    model,
+    pred_linear = "Linear",
+    pred_log = "Log(DHW)",
+    pred_poisson = "Poisson",
+    pred_poisson_log = "Poisson Log(DHW)",
+    pred_negative_binomial = "Negative Binomial (Log DHW)"
+    ))
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-library(fixest)
-library(dplyr)
-library(ggplot2)
-
-# Define a sequence of predictor values
-SSTA_seq <- seq(min(all_bleaching_events$dhw, na.rm = TRUE),
-                max(all_bleaching_events$dhw, na.rm = TRUE),
-                length.out = 200)
-
-# Example: use one existing Site_ID and Date_Year from your data
-example_site <- all_bleaching_events$Site_ID[1]
-example_year <- all_bleaching_events$Date_Year[1]
-
-newdata <- data.frame(
-  dhw = SSTA_seq,
-  Site_ID = example_site,
-  Date_Year = example_year
+# Define custom color palette for publication-style clarity
+model_colors <- c(
+  "Linear" = "#1b9e77",
+  "Log(DHW)" = "blue",
+  "Poisson" = "purple",
+  "Poisson Log(DHW)" = "red",
+  "Negative Binomial (Log DHW)" = "orange"
 )
 
-# Then predict normally
-newdata$linear <- predict(model_linear, newdata, type = "response")
-newdata$log <- predict(model_log, newdata, type = "response")
-newdata$poisson <- predict(model_poisson, newdata, type = "response")
-newdata$poisson_log <- predict(model_poisson_log, newdata, type = "response")
-newdata$neg_binom <- predict(model_negative_binomial, newdata, type = "response")
-
-# --- Convert to long format for plotting ---
-plot_df <- newdata %>%
-  tidyr::pivot_longer(cols = c(linear, log, poisson, poisson_log, neg_binom),
-                      names_to = "Model",
-                      values_to = "Predicted_Bleaching")
-
-# --- Plot ---
-ggplot(plot_df, aes(x = dhw, y = Predicted_Bleaching, color = Model)) +
-  geom_line(size = 1.2) +
-  scale_color_manual(values = c("linear" = "#1b9e77",
-                                "log" = "#d95f02",
-                                "poisson" = "#7570b3",
-                                "poisson_log" = "#e7298a",
-                                "neg_binom" = "#66a61e")) +
-  labs(title = "Comparison of Model Fits: Linear, Log, Poisson, and Negative Binomial",
-       x = "Sea Surface Temperature Anomaly (dhw)",
-       y = "Predicted Percent Bleached",
-       color = "Model Type") +
-  theme_minimal(base_size = 14) +
-  theme(legend.position = "bottom")
-
-
-
-
-
-
-
-
-
-library(fixest)
-library(dplyr)
-library(ggplot2)
-library(tidyr)
-
-# Define a sequence of predictor values
-SSTA_seq <- seq(min(all_bleaching_events$dhw, na.rm = TRUE),
-                max(all_bleaching_events$dhw, na.rm = TRUE),
-                length.out = 200)
-
-# Use a representative site and year from your data
-example_site <- all_bleaching_events$Site_ID[1]
-example_year <- all_bleaching_events$Date_Year[1]
-
-# Create newdata with all required variables
-newdata <- data.frame(
-  dhw = SSTA_seq,
-  Site_ID = example_site,
-  Date_Year = example_year
-)
-
-# Get predictions from each model
-# For fixest models, we need to handle fixed effects properly
-newdata$log <- predict(model_log, newdata = newdata, type = "response")
-newdata$poisson <- predict(model_poisson, newdata = newdata, type = "response")
-newdata$poisson_log <- predict(model_poisson_log, newdata = newdata, type = "response")
-newdata$neg_binom <- predict(model_negative_binomial, newdata = newdata, type = "response")
-
-# Convert to long format for plotting - ALL FOUR MODELS
-plot_df <- newdata %>%
-  pivot_longer(cols = c(log, poisson, poisson_log, neg_binom),
-               names_to = "Model",
-               values_to = "Predicted_Bleaching")
-
-# Create the plot with all four models
-ggplot(plot_df, aes(x = dhw, y = Predicted_Bleaching, color = Model)) +
-  geom_line(linewidth = 1.2) +
-  scale_color_manual(
-    values = c("log" = "#d95f02",
-               "poisson" = "#7570b3",
-               "poisson_log" = "#e7298a",
-               "neg_binom" = "#66a61e"),
-    labels = c("log" = "Log-Linear (feols, log1p(X))",
-               "poisson" = "Poisson (fepois, X)",
-               "poisson_log" = "Poisson (fepois, log1p(X))",
-               "neg_binom" = "Negative Binomial (fenegbin, log1p(X))")
-  ) +
+# Generate plot
+ggplot(plot_data, aes(x = dhw)) +
+  geom_point(aes(y = Percent_Bleached),
+             alpha = 0.25, color = "gray50", size = 0.8) +
+  geom_smooth(aes(y = predicted_bleaching, color = model),
+              method = "loess", se = TRUE, size = 1.1, span = 0.7) +
+  scale_color_manual(values = model_colors) +
   labs(
-    title = "Comparison of Model Predictions: Four Model Specifications",
-    x = "Sea Surface Temperature Anomaly (SSTA DHW, °C-weeks)",
-    y = "Predicted Percent Bleached (%)",
+    x = "Degree Heating Weeks (DHW)",
+    y = "Percent Bleached",
+    title = "Predicted Percent Bleaching vs DHW",
+    subtitle = "Observed bleaching (gray points) with fitted curves from multiple model specifications",
     color = "Model Type"
   ) +
-  theme_minimal(base_size = 14) +
+  theme_minimal(base_size = 13) +
   theme(
+    plot.title = element_text(face = "bold", size = 15),
     legend.position = "bottom",
-    plot.title = element_text(hjust = 0.5, face = "bold"),
-    panel.grid.minor = element_blank(),
-    legend.text = element_text(size = 10)
+    legend.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank()
   )
+
+
+
