@@ -420,10 +420,6 @@ ecoregion_stats <- model_data %>%
   ) %>%
   arrange(desc(n_obs))
 
-cat("\n=== SELECTED ECOREGIONS SUMMARY ===\n")
-print(ecoregion_stats)
-
-# 
 # ecoregion_stats_filtered <- ecoregion_stats %>%
 #   filter(n_obs > 100)
 # 
@@ -492,4 +488,107 @@ p_slopes <- ggplot(ecoregion_slopes,
   theme(plot.title = element_text(face = "bold", size = 14))
 
 print(p_slopes)
+
+
+
+#### demeaned data and plots ####
+# ===== 1. Create Demeaned Dataset =====
+All_Bleaching_Events_Data_Demeaned <- All_Bleaching_Events_Data_AllDHW %>%
+  group_by(Site_ID, Date_Year) %>%
+  mutate(
+    mean_log_dhw = mean(log1p(dhw), na.rm = TRUE),
+    log_dhw_demeaned = log1p(dhw) - mean_log_dhw
+  ) %>%
+  ungroup()
+
+# ===== 2. Fit Both Models =====
+original_model <- fepois(
+  Percent_Bleached ~ log1p(dhw) | Site_ID + Date_Year,
+  cluster = ~Ecoregion_Name,
+  data = All_Bleaching_Events_Data_AllDHW
+)
+
+demeaned_model <- fepois(
+  Percent_Bleached ~ log_dhw_demeaned,
+  cluster = ~Ecoregion_Name,
+  data = All_Bleaching_Events_Data_Demeaned
+)
+
+# ===== 3. Generate Predictions =====
+All_Bleaching_Events_Data_AllDHW$pred_original <- predict(
+  original_model, 
+  All_Bleaching_Events_Data_AllDHW
+)
+
+All_Bleaching_Events_Data_Demeaned$pred_demeaned <- predict(
+  demeaned_model,
+  All_Bleaching_Events_Data_Demeaned
+)
+
+# Prepare data for plotting
+plot_data_fitted <- bind_rows(
+  All_Bleaching_Events_Data_AllDHW %>%
+    select(dhw, Percent_Bleached, predicted_bleaching = pred_original) %>%
+    mutate(model = "Original (with FE)"),
+  All_Bleaching_Events_Data_Demeaned %>%
+    select(dhw, Percent_Bleached, predicted_bleaching = pred_demeaned) %>%
+    mutate(model = "Demeaned")
+)
+
+# ===== 4. Create Plot =====
+model_colors <- c(
+  "Original (with FE)" = "#1b9e77",
+  "Demeaned" = "#d95f02"
+)
+
+# Separate the data by model
+plot_data_original <- plot_data_fitted %>% 
+  filter(model == "Original (with FE)")
+
+plot_data_demeaned <- plot_data_fitted %>% 
+  filter(model == "Demeaned")
+
+ggplot(plot_data_fitted, aes(x = dhw)) +
+  geom_point(
+    aes(y = Percent_Bleached),
+    alpha = 0.25, 
+    color = "gray50", 
+    size = 0.8
+  ) +
+  # Original model - NO confidence interval
+  geom_smooth(
+    data = plot_data_original,
+    aes(y = predicted_bleaching, color = model),
+    method = "loess", 
+    se = TRUE,  # CI for original model
+    linewidth = 1.1, 
+    span = 0.7, 
+    alpha = 0.2
+  ) +
+  # Demeaned model - WITH confidence interval
+  geom_smooth(
+    data = plot_data_demeaned,
+    aes(y = predicted_bleaching, color = model),
+    method = "loess", 
+    se = TRUE,  # CI for demeaned model
+    linewidth = 1.1, 
+    span = 0.7,
+    alpha = 0.2
+  ) +
+  scale_color_manual(values = model_colors) +
+  scale_fill_manual(values = model_colors) +
+  labs(
+    x = "Degree Heating Weeks (DHW)",
+    y = "Percent Bleached",
+    title = "Predicted Percent Bleaching vs DHW: Original vs Demeaned Model",
+    subtitle = "Observed bleaching (gray points) with fitted curves from both model specifications",
+    color = "Model Type",
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold", size = 15),
+    legend.position = "bottom",
+    legend.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank()
+  )
 
