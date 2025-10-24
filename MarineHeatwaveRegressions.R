@@ -8,6 +8,8 @@ library(dplyr)
 library(lubridate)
 library(tidyr)
 library(ggplot2)
+library(DescTools)
+
 
 #### load gmst and DHW data ####
 gmst_data <- read.csv("~/Library/CloudStorage/Dropbox/Coracle/ERA5_GMT.csv") %>% select(-X) %>%
@@ -133,6 +135,8 @@ for (loc_id in seq_len(nrow(unique_locations))) {
       
       # Pseudo R-squared (McFadden)
       pseudo_r2 <- 1 - (resid_dev / null_dev)
+      pseudo_r2_mcfadden <- PseudoR2(lm_fit, which = "McFadden")
+      pseudo_r2_nagelkerke <- PseudoR2(lm_fit, which = "Nagelkerke")
       
       # 2. Dispersion parameter
       dispersion <- resid_dev / df_resid
@@ -175,6 +179,8 @@ for (loc_id in seq_len(nrow(unique_locations))) {
         residual_deviance = resid_dev,
         deviance_pval = deviance_pval,
         pseudo_r2 = pseudo_r2,
+        pseudo_r2_mcfadden = pseudo_r2_mcfadden, 
+        pseudo_r2_nagelkerke = pseudo_r2_nagelkerke, 
         dispersion = dispersion,
         pearson_chisq = pearson_chisq,
         pearson_pval = pearson_pval,
@@ -485,3 +491,86 @@ leaf_chisq <- leaf_chisq %>%
 
 # Display the interactive map
 leaf_chisq
+
+
+
+
+#### PSEUDO R² PLOTS ####
+library(terra)
+library(dplyr)
+library(leaflet)
+library(viridisLite)
+
+#### OPTION 1: McFadden's Pseudo R² Maps ####
+
+# Create a list to store monthly rasters
+raster_list_r2 <- list()
+
+# Define global grid (same as before)
+global_ext <- terra::ext(
+  range(final_poisson_results$longitude, na.rm = TRUE),
+  range(final_poisson_results$latitude, na.rm = TRUE)
+)
+
+world_grid <- terra::rast(global_ext, resolution = 0.25, crs = "EPSG:4326")
+
+# Rasterize mean Pseudo R² per grid cell for each month
+for (m in unique(final_poisson_results$month_name)) {
+  month_data <- final_poisson_results %>% filter(month_name == m)
+  if (nrow(month_data) == 0) next
+  
+  points_spat <- terra::vect(
+    month_data[, c("longitude", "latitude", "pseudo_r2")],
+    geom = c("longitude", "latitude"),
+    crs = "EPSG:4326"
+  )
+  
+  r2_raster <- terra::rasterize(points_spat, world_grid, 
+                                field = "pseudo_r2", fun = mean)
+  raster_list_r2[[m]] <- r2_raster
+}
+
+# Combine raster values for color scaling
+all_values_r2 <- unlist(lapply(raster_list_r2, terra::values))
+val_range_r2 <- range(all_values_r2, na.rm = TRUE)
+
+# Define color palette (white → yellow → red for R²)
+# Use a sequential palette since R² is bounded [0,1]
+pal_r2 <- colorNumeric(
+  palette = colorRampPalette(c("darkblue", "white", "darkred"))(256),
+  domain = c(min(val_range_r2), max(val_range_r2, 0.5)),  # Cap at 0.5 or max value
+  na.color = "transparent"
+)
+
+# Initialize leaflet map
+leaf_r2 <- leaflet() %>%
+  addProviderTiles("CartoDB.Positron")
+
+# Add monthly raster layers
+for (m in names(raster_list_r2)) {
+  leaf_r2 <- leaf_r2 %>%
+    addRasterImage(
+      raster_list_r2[[m]],
+      colors = pal_r2,
+      opacity = 0.8,
+      group = m
+    )
+}
+
+# Add layer control and legend
+leaf_r2 <- leaf_r2 %>%
+  addLayersControl(
+    baseGroups = names(raster_list_r2),
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  addLegend(
+    position = "bottomright",
+    pal = pal_r2,
+    values = all_values_r2,
+    title = "McFadden's Pseudo R²",
+    labFormat = labelFormat(digits = 3)
+  )
+
+# Display the interactive map
+leaf_r2
+
