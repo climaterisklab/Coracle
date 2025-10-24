@@ -9,6 +9,7 @@ library(lubridate)
 library(tidyr)
 library(ggplot2)
 library(DescTools)
+library(spatstat)
 
 
 #### load gmst and DHW data ####
@@ -100,7 +101,7 @@ for (loc_id in seq_len(nrow(unique_locations))) {
     # Aggregate to yearly
     ts_yearly <- ts_month %>%
       group_by(year) %>%
-      summarise(mean_dhw = round(mean(dhw, na.rm = TRUE), 0), .groups = 'drop')
+      summarise(mean_dhw = mean(dhw, na.rm = TRUE), .groups = 'drop')
     
     # Join with GMST
     merged_df <- ts_yearly %>%
@@ -135,8 +136,8 @@ for (loc_id in seq_len(nrow(unique_locations))) {
       
       # Pseudo R-squared (McFadden)
       pseudo_r2 <- 1 - (resid_dev / null_dev)
-      pseudo_r2_mcfadden <- PseudoR2(lm_fit, which = "McFadden")
-      pseudo_r2_nagelkerke <- PseudoR2(lm_fit, which = "Nagelkerke")
+      #pseudo_r2_mcfadden <- PseudoR2(lm_fit, which = "McFadden")
+      #pseudo_r2_nagelkerke <- PseudoR2(lm_fit, which = "Nagelkerke")
       
       # 2. Dispersion parameter
       dispersion <- resid_dev / df_resid
@@ -147,11 +148,11 @@ for (loc_id in seq_len(nrow(unique_locations))) {
       pearson_pval <- pchisq(pearson_chisq, df_resid, lower.tail = FALSE)
       
       # 4. AIC and BIC
-      model_aic <- AIC(lm_fit)
-      model_bic <- BIC(lm_fit)
+      #model_aic <- AIC(lm_fit)
+      #model_bic <- BIC(lm_fit)
       
       # 5. Log-likelihood
-      log_lik <- logLik(lm_fit)[1]
+      #log_lik <- logLik(lm_fit)[1]
       
       result_count <- result_count + 1
       
@@ -172,15 +173,16 @@ for (loc_id in seq_len(nrow(unique_locations))) {
         p_value = coef_summary[2, 4],
         
         # Goodness of fit metrics
-        aic = model_aic,
-        bic = model_bic,
-        log_likelihood = log_lik,
+        #aic = model_aic,
+        #bic = model_bic,
+        #log_likelihood = log_lik,
         null_deviance = null_dev,
         residual_deviance = resid_dev,
         deviance_pval = deviance_pval,
         pseudo_r2 = pseudo_r2,
-        pseudo_r2_mcfadden = pseudo_r2_mcfadden, 
-        pseudo_r2_nagelkerke = pseudo_r2_nagelkerke, 
+        #spatstat_pseudoR2 = spatstat_pseudoR2,
+        #pseudo_r2_mcfadden = pseudo_r2_mcfadden, 
+        #pseudo_r2_nagelkerke = pseudo_r2_nagelkerke, 
         dispersion = dispersion,
         pearson_chisq = pearson_chisq,
         pearson_pval = pearson_pval,
