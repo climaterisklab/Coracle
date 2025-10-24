@@ -223,6 +223,78 @@ final_poisson_results <- read.csv("poisson_model_results_with_gof.csv")
 
 
 
+#### dhw, GMT plots ####
+# Extract the 10 location_ids corresponding to your site IDs
+ten_location_ids <- final_poisson_results %>%
+  filter(Site_ID %in% c(8, 9498, 9469, 8521, 6270, 249, 3058, 3567, 7338, 8027)) %>%
+  distinct(location_id) %>%
+  pull(location_id)
+
+# Create an empty list for storing results
+plot_data_list <- list()
+
+for (loc_id in ten_location_ids) {
+  
+  loc_data <- all_ts_data %>% filter(location_id == loc_id)
+  if (nrow(loc_data) == 0) next
+  
+  lon <- loc_data$lon[1]
+  lat <- loc_data$lat[1]
+  
+  # Aggregate to yearly means
+  ts_yearly <- loc_data %>%
+    group_by(year) %>%
+    summarise(mean_dhw = mean(dhw, na.rm = TRUE), .groups = "drop")
+  
+  merged_df <- ts_yearly %>%
+    inner_join(gmst_data, by = c("year" = "Year")) %>%
+    drop_na(mean_dhw, GMT)
+  
+  if (nrow(merged_df) < 2) next
+  
+  merged_df <- merged_df %>%
+    mutate(
+      mean_dhw = pmax(mean_dhw, 0.001),
+      location_id = factor(loc_id),
+      lon = lon,
+      lat = lat
+    )
+  
+  plot_data_list[[as.character(loc_id)]] <- merged_df
+}
+# All_Bleaching_Events_Data_AllDHW <- read.csv("All_Bleaching_Events_Data_AllDHW.csv")
+ten_sites_info <- All_Bleaching_Events_Data_AllDHW %>%
+  filter(Site_ID %in% c(8, 9498, 9469, 8521, 6270, 249, 3058, 3567, 7338, 8027)) %>%
+  distinct(Site_ID, Ecoregion_Name)
+
+# Merge ecoregion names into your plot data
+plot_data_named <- plot_data %>%
+  left_join(ten_sites_info, by = "location_id")
+
+# Combine all 10 sites
+plot_data <- bind_rows(plot_data_list)
+
+# Verify that location_id exists
+str(plot_data$location_id)
+
+# Plot
+ggplot(plot_data, aes(x = GMT, y = mean_dhw)) +
+  geom_point(color = "steelblue", size = 2) +
+  geom_smooth(method = "glm", method.args = list(family = "poisson"), se = TRUE, color = "darkred") +
+  facet_wrap(~ location_id, scales = "free_y") +
+  labs(
+    title = "Relationship between Global Mean Surface Temperature (GMT) and DHW",
+    subtitle = "Ten selected reef locations",
+    x = "Global Mean Surface Temperature (°C)",
+    y = "Degree Heating Weeks (DHW)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(strip.text = element_text(face = "bold"))
+
+
+
+
+
 #### quick plots ####
 ## Histogram of beta coefficients
 hist(final_poisson_results$beta, breaks = 50, main = "Histogram of Beta Coefficients", xlab = "Beta Coefficient")
@@ -327,13 +399,6 @@ leaf
 
 
 #### looking at model fits ####
-final_poisson_results$bic <- NULL
-final_poisson_results$log_likelihood <- NULL
-final_poisson_results$aic <- NULL
-
-
-
-
 # Filter for insignificant points (p-value > 0.05)
 insig_data <- final_poisson_results %>% 
   filter(p_value > 0.05)
@@ -575,4 +640,7 @@ leaf_r2 <- leaf_r2 %>%
 
 # Display the interactive map
 leaf_r2
+
+
+
 
