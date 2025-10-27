@@ -182,35 +182,29 @@ tryCatch({
   })
 })
 
-# ============================================================================
-# ALTERNATIVE: SIMPLE MANUAL MERGE (if you have files locally)
-# ============================================================================
 
-# If the above doesn't work, uncomment this simpler version:
-# 
-# library(terra)
-# 
-# # Set your folder containing the tiles
-# tile_folder <- "./reef_tiles"
-# 
-# # Get all .tif files
-# tile_files <- list.files(tile_folder, 
-#                          pattern = "global_reef_mask_30m_styled.*\\.tif$",
-#                          full.names = TRUE)
-# 
-# # Read and merge
-# rasters <- lapply(tile_files, rast)
-# collection <- sprc(rasters)
-# merged <- mosaic(collection)
-# 
-# # Save
-# writeRaster(merged, "merged_reef_mask.tif", overwrite = TRUE)
-# 
-# cat("Done! Merged raster saved to: merged_reef_mask.tif\n")
+#### doing actual intersection ####
+# Load libraries
+library(terra)
+library(sf)
 
+# Read the raster (VRT file)
+raster_data <- rast("/path/to/your/OUTPUT.vrt")
 
+# Read the EEZ shapefile
+eez <- st_read("~/Library/CloudStorage/Dropbox/Coracle/World_EEZ_v12_20231025/eez_v12.shp")
 
+# Fix invalid geometries automatically
+eez_valid <- st_make_valid(eez)
 
+# Crop and mask the raster
+# This combines crop (extent) and mask (shape) in one step
+clipped_raster <- crop(raster_data, eez_valid, mask = TRUE)
+
+# Save the output
+writeRaster(clipped_raster, 
+            "output_clipped.tif", 
+            overwrite = TRUE)
 
 
 
