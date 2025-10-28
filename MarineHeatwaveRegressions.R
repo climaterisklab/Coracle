@@ -262,7 +262,7 @@ for (loc_id in ten_location_ids) {
   
   plot_data_list[[as.character(loc_id)]] <- merged_df
 }
-# All_Bleaching_Events_Data_AllDHW <- read.csv("All_Bleaching_Events_Data_AllDHW.csv")
+All_Bleaching_Events_Data_AllDHW <- read.csv("All_Bleaching_Events_Data_AllDHW.csv")
 ten_sites_info <- All_Bleaching_Events_Data_AllDHW %>%
   filter(Site_ID %in% c(8, 9498, 9469, 8521, 6270, 249, 3058, 3567, 7338, 8027)) %>%
   distinct(Site_ID, Ecoregion_Name)
@@ -292,7 +292,21 @@ ggplot(plot_data, aes(x = GMT, y = mean_dhw)) +
   theme(strip.text = element_text(face = "bold"))
 
 
-
+ggplot(plot_data, aes(x = GMT, y = mean_dhw)) +
+  geom_point(color = "steelblue", size = 2) +
+  geom_smooth(method = "lm", 
+              formula = y ~ exp(x), 
+              se = TRUE, 
+              color = "darkred") +
+  facet_wrap(~ location_id, scales = "free_y") +
+  labs(
+    title = "Relationship between Global Mean Surface Temperature (GMT) and DHW",
+    subtitle = "Ten selected reef locations (Exponential fit)",
+    x = "Global Mean Surface Temperature (°C)",
+    y = "Degree Heating Weeks (DHW)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(strip.text = element_text(face = "bold"))
 
 
 #### quick plots ####

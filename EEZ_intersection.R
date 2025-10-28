@@ -2,13 +2,16 @@
 ### date: 21 October 2025
 ### description: EEZ intersections with shallow water tropical reefs
 
-# ============================================================================
-# Download and merge reef mask tiles from Google Drive (R version)
-# Requires: install.packages(c("googledrive", "terra", "sf"))
-# ============================================================================
-
+#### libraries ####
 library(googledrive)
 library(terra)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+
 
 # ============================================================================
 # CONFIGURATION
@@ -83,31 +86,6 @@ download_and_merge_from_gdrive <- function() {
   cat("\nAll files downloaded!\n\n")
   return(downloaded_files)
 }
-# 
-# # ============================================================================
-# # OPTION 2: MERGE LOCAL FILES (if already downloaded)
-# # ============================================================================
-# 
-# get_local_tiles <- function(folder_path, file_pattern) {
-#   
-#   # Find all matching .tif files
-#   search_pattern <- paste0(file_pattern, ".*\\.tif$")
-#   all_files <- list.files(folder_path, 
-#                           pattern = search_pattern, 
-#                           full.names = TRUE)
-#   
-#   if (length(all_files) == 0) {
-#     stop(paste0("No files found in '", folder_path, 
-#                 "' matching pattern '", file_pattern, "'"))
-#   }
-#   
-#   cat(paste0("Found ", length(all_files), " local tiles\n"))
-#   return(all_files)
-# }
-# 
-# # ============================================================================
-# # MERGE RASTER TILES
-# # ============================================================================
 
 merge_tiles <- function(tile_files, output_file) {
   
@@ -183,127 +161,85 @@ tryCatch({
 })
 
 
-#### doing actual intersection ####
-# Load libraries
-library(terra)
-library(sf)
+#### did intersection in QGIS ####
+# Read the CSV
+eez_coral <- read.csv("/Users/pujapande/Documents/Coracle/zonal_statisticas_coral_eez.csv")
 
-# Read the raster (VRT file)
-raster_data <- rast("/path/to/your/OUTPUT.vrt")
+colnames(eez_coral)
+head(eez_coral)
+summary(eez_coral)
 
-# Read the EEZ shapefile
-eez <- st_read("~/Library/CloudStorage/Dropbox/Coracle/World_EEZ_v12_20231025/eez_v12.shp")
+# Filter only EEZs with coral and pivot to get all sovereigns
+eez_by_sovereign <- eez_coral %>%
+  filter(coral_count > 0) %>%
+  select(SOVEREIGN1, SOVEREIGN2, coral_count) %>%
+  pivot_longer(cols = c(SOVEREIGN1, SOVEREIGN2), 
+               names_to = "sovereign_type", 
+               values_to = "sovereign") %>%
+  filter(!is.na(sovereign), sovereign != "") %>%
+  group_by(sovereign) %>%
+  summarise(total_coral_pixels = sum(coral_count, na.rm = TRUE)) %>%
+  arrange(desc(total_coral_pixels))
 
-# Fix invalid geometries automatically
-eez_valid <- st_make_valid(eez)
+# View top countries
+print("Top 20 sovereign states:")
+print(head(eez_by_sovereign, 20))
 
-# Crop and mask the raster
-# This combines crop (extent) and mask (shape) in one step
-clipped_raster <- crop(raster_data, eez_valid, mask = TRUE)
+# Top 20 bar chart
+top20 <- head(eez_by_sovereign, 20)
 
-# Save the output
-writeRaster(clipped_raster, 
-            "output_clipped.tif", 
-            overwrite = TRUE)
-
-
-
-
-
-
-#### intersecting exclusive economic zones with shallow water tropical reefs ####
-## done in r 
-library(terra)
-# Load shapefiles
-shape1 <- vect("~/Library/CloudStorage/Dropbox/Coracle/Global_reef_maps/UNEP-WCMC/14_001_WCMC008_CoralReefs2018_v4_1/01_Data/WCMC008_CoralReef2018_Py_v4_1.shp")
-shape2 <- vect("~/Library/CloudStorage/Dropbox/Coracle/World_EEZ_v12_20231025/eez_v12.shp")
-# Ensure same CRS
-shape2 <- project(shape2, crs(shape1))
-# Intersect
-intersected <- terra::intersect(shape1, shape2)
-class(intersected)
-writeVector(intersected, "coral_reefs_in_eez.shp", overwrite = TRUE)
-
-## done using QGIS - to make sure everything is correct
-intersected_qgis <- vect("Coral_Reefs_in_EEZ_QGIS.shp")
-
-names(intersected_qgis)
-head(intersected_qgis)
-
-unique(intersected_qgis$SOVEREIGN1)
-unique(intersected_qgis$SOVEREIGN2)
-unique(intersected_qgis$SOVEREIGN3)
+ggplot(top20, aes(x = reorder(sovereign, total_coral_pixels), y = total_coral_pixels)) +
+  geom_col(fill = "coral") +
+  coord_flip() +
+  labs(title = "Top 20 Sovereign States by Coral Reef Coverage",
+       x = "Sovereign State",
+       y = "Total Coral Pixels") +
+  theme_minimal() +
+  theme(text = element_text(size = 12))
 
 
-## plots
-library(dplyr)
-
-countries_with_reefs <- intersected_qgis %>%
-  as.data.frame() %>%
-  select(SOVEREIGN1, SOVEREIGN2, SOVEREIGN3) %>%
-  tidyr::pivot_longer(cols = everything(), values_to = "country") %>%
-  filter(!is.na(country), country != "") %>%
-  distinct(country) %>%
-  arrange(country)
-
-reef_counts <- intersected_qgis %>%
-  as.data.frame() %>%
-  select(SOVEREIGN1, SOVEREIGN2, SOVEREIGN3) %>%
-  tidyr::pivot_longer(cols = everything(), values_to = "country") %>%
+# Aggregate coral counts by sovereign state
+reef_counts <- eez_coral %>%
+  filter(coral_count > 0) %>%
+  select(SOVEREIGN1, SOVEREIGN2, coral_count) %>%
+  pivot_longer(cols = c(SOVEREIGN1, SOVEREIGN2), 
+               names_to = "sovereign_type", 
+               values_to = "country") %>%
   filter(!is.na(country), country != "") %>%
   group_by(country) %>%
-  summarise(n_reefs = n()) %>%
-  arrange(desc(n_reefs))
+  summarise(total_coral_pixels = sum(coral_count, na.rm = TRUE),
+            n_reefs = n()) %>%
+  arrange(desc(total_coral_pixels))
 
-library(terra)
-
-# Reproject for accurate area calculations
-intersected_eqarea <- project(intersected_qgis, "ESRI:54009")
-
-# Add area (km²)
-intersected_eqarea$area_km2 <- expanse(intersected_eqarea, unit = "km")
-
-reef_area <- intersected_eqarea %>%
-  as.data.frame() %>%
-  select(SOVEREIGN1, SOVEREIGN2, SOVEREIGN3, area_km2) %>%
-  tidyr::pivot_longer(cols = c(SOVEREIGN1, SOVEREIGN2, SOVEREIGN3), values_to = "country") %>%
-  filter(!is.na(country), country != "") %>%
-  group_by(country) %>%
-  summarise(total_area_km2 = sum(area_km2, na.rm = TRUE)) %>%
-  arrange(desc(total_area_km2))
-
-reef_area
-
-
-
-library(ggplot2)
-library(dplyr)
-library(rnaturalearth)
-library(rnaturalearthdata)
-
-# Load world shapefile (country polygons)
+# Load world shapefile
 world <- ne_countries(scale = "medium", returnclass = "sf")
 
-# Make sure reef_counts$country matches naming in world$name
-# You might need to adjust or harmonize names, e.g. "United States" vs "United States of America"
-reef_counts <- reef_counts %>%
+# Harmonize country names
+reef_counts_clean <- reef_counts %>%
   mutate(country = case_when(
     country == "United States" ~ "United States of America",
-    country == "Democratic Republic of the Congo" ~ "Congo, The Democratic Republic of the",
+    country == "United Kingdom" ~ "United Kingdom",
+    country == "France" ~ "France",
+    country == "Netherlands" ~ "Netherlands",
+    country == "Australia" ~ "Australia",
+    country == "New Zealand" ~ "New Zealand",
+    country == "Norway" ~ "Norway",
     TRUE ~ country
   ))
 
 # Merge reef counts with world shapefile
-world_reef <- left_join(world, reef_counts, by = c("name" = "country"))
+world_reef <- left_join(world, reef_counts_clean, by = c("name" = "country"))
 
-# Plot
+# Create the map with total coral pixels (NO scientific notation)
 ggplot(data = world_reef) +
-  geom_sf(aes(fill = n_reefs), color = "grey50", size = 0.1) +
+  geom_sf(aes(fill = total_coral_pixels), color = "grey50", size = 0.1) +
   scale_fill_viridis_c(
     option = "plasma",
     trans = "log10",
     na.value = "lightgrey",
-    name = "Reef count"
+    name = "Coral Pixels",
+    breaks = c(10, 100, 1000, 10000, 100000),
+    labels = comma  # This formats numbers with commas
   ) +
   theme_minimal() +
   theme(
@@ -313,11 +249,6 @@ ggplot(data = world_reef) +
     axis.ticks = element_blank()
   ) +
   labs(
-    title = "Distribution of Shallow-Water Tropical Reefs by Country (EEZ Intersections)",
-    caption = "Data: UNEP-WCMC Coral Reefs (2018) & Marine Regions EEZs"
+    title = "Distribution of Coral Reefs by Country (EEZ)",
+    caption = "Data: Coral reef raster clipped to EEZ boundaries"
   )
-
-
-
-
-
