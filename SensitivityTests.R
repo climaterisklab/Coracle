@@ -276,7 +276,7 @@ ggplot(model_data, aes(x = dhw)) +
 model_data <- All_Bleaching_Events_Data_AllDHW %>%
   filter(!is.na(Percent_Bleached), !is.na(dhw))
 
-## did not add negatuve binomial no log because percent bleaching goes over 100
+## did not add negative binomial no log because percent bleaching goes over 100
 
 # Add predictions from all relevant models
 model_data <- model_data %>%
@@ -353,9 +353,39 @@ ggplot(plot_data, aes(x = dhw)) +
   )
 
 
+#### poisson or binomial ####
+dispersion <- model$deviance / model$df.residual
+model_poisson_log$deviance / model_poisson_log$df.residual
+
+model_negative_binomial$theta
+
+mean_bleach <- mean(All_Bleaching_Events_Data_AllDHW$Percent_Bleached, na.rm = TRUE)
+var_bleach <- var(All_Bleaching_Events_Data_AllDHW$Percent_Bleached, na.rm = TRUE)
+dispersion_raw <- var_bleach / mean_bleach
+print(paste("Raw data dispersion ratio:", round(dispersion_raw, 2)))
+
+
+# Compare AIC/BIC between Poisson and Negative Binomial
+AIC(model_poisson_log)
+AIC(model_negative_binomial)  # Your negbin model with log(dhw)
+
+BIC(model_poisson_log)
+BIC(model_negative_binomial)
+# Much lower AIC/BIC for Negbin = strong evidence of overdispersion
+
+
+etable(model_linear, model_log, model_poisson, model_poisson_log, model_negative_binomial, 
+       dict = c("dhw" = "DHW", "log_dhw" = "log(DHW)"), 
+       fitstat = c("aic", "bic", "r2"))
+
 
 #### ecoregion curves ####
 #### STEP 0: Define regional groups ####
+
+data_per_ecoregion <- All_Bleaching_Events_Data_AllDHW %>%
+  group_by(Ecoregion_Name) %>%
+  summarise(n_obs = n(), n_sites = n_distinct(Site_ID), .groups = "drop") %>%
+  arrange(desc(n_obs))
 
 regions_caribbean <- c(
   "Hispaniola, Puerto Rico and Lesser Antilles",
@@ -452,6 +482,91 @@ p_faceted <- ggplot(model_data, aes(x = dhw)) +
   )
 
 print(p_faceted)
+
+
+
+## with neg bin
+
+
+p_faceted <- ggplot(model_data, aes(x = dhw)) +
+  geom_point(aes(y = Percent_Bleached, color = "Observed"),
+             alpha = 0.4, size = 0.8) +
+  # Poisson log model with loess smoothing (constrained to >= 0)
+  geom_smooth(aes(y = pmax(pred_poisson_log, 0), color = "Poisson Log"),
+              method = "loess", size = 1, se = TRUE, span = 0.8) +
+  # Negative Binomial with loess smoothing (constrained to >= 0)
+  geom_smooth(aes(y = pmax(pred_negbin_log, 0), color = "Negative Binomial"),
+              method = "loess", size = 1.2, se = TRUE, span = 0.8) +
+  scale_color_manual(
+    name = "Model Type",
+    values = c("Observed" = "gray50", 
+               "Poisson Log" = "red", 
+               "Negative Binomial" = "orange")
+  ) +
+  coord_cartesian(xlim = c(0, NA), ylim = c(0, NA)) +  # Constrain both axes to >= 0
+  facet_wrap(~ Ecoregion_Name, scales = "free_y", ncol = 4) +
+  labs(
+    x = "Degree Heating Weeks (DHW)",
+    y = "Percent Bleached",
+    title = "Predicted Coral Bleaching by Ecoregion",
+    subtitle = "Both models shown with loess smoothing and 95% CI"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    strip.text = element_text(face = "bold", size = 9),
+    panel.grid.minor = element_blank(),
+    legend.position = "bottom"
+  )
+print(p_faceted)
+
+
+# Identify top 8 ecoregions by number of observations
+top_ecoregions <- model_data %>%
+  count(Ecoregion_Name, sort = TRUE) %>%
+  slice_head(n = 8) %>%
+  pull(Ecoregion_Name)
+
+# Filter data to top 8 ecoregions
+model_data_top8 <- model_data %>%
+  filter(Ecoregion_Name %in% top_ecoregions)
+
+# Plot with both x and y constrained to >= 0
+p_faceted_top8 <- ggplot(model_data_top8, aes(x = dhw)) +
+  geom_point(aes(y = Percent_Bleached, color = "Observed"),
+             alpha = 0.4, size = 0.8) +
+  # Poisson log model with loess smoothing (constrained to >= 0)
+  geom_smooth(aes(y = pmax(pred_poisson_log, 0), color = "Poisson Log"),
+              method = "loess", size = 1, se = TRUE, span = 0.8) +
+  # Negative Binomial with loess smoothing (constrained to >= 0)
+  geom_smooth(aes(y = pmax(pred_negbin_log, 0), color = "Negative Binomial"),
+              method = "loess", size = 1.2, se = TRUE, span = 0.8) +
+  scale_color_manual(
+    name = "Model Type",
+    values = c("Observed" = "gray50", 
+               "Poisson Log" = "red", 
+               "Negative Binomial" = "orange")
+  ) +
+  coord_cartesian(xlim = c(0, NA), ylim = c(0, NA)) +  # Constrain both axes to >= 0
+  facet_wrap(~ Ecoregion_Name, scales = "free_y", ncol = 4) +
+  labs(
+    x = "Degree Heating Weeks (DHW)",
+    y = "Percent Bleached",
+    title = "Predicted Coral Bleaching by Ecoregion (Top 8 Regions)",
+    subtitle = "Both models shown with loess smoothing and 95% CI"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    strip.text = element_text(face = "bold", size = 9),
+    panel.grid.minor = element_blank(),
+    legend.position = "bottom"
+  )
+
+print(p_faceted_top8)
+
+
+
 
 
 #### STEP 5: Marginal effect comparison ####
