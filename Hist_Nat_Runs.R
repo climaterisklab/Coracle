@@ -7,6 +7,8 @@ library(fixest)
 library(ncdf4)
 library(dplyr)
 library(ggplot2)
+library(reshape2)
+
 
 #### load data and model ####
 All_Bleaching_Events_Data_AllDHW <- read.csv("All_Bleaching_Events_Data_AllDHW.csv")
@@ -15,8 +17,8 @@ final_model <- fepois(Percent_Bleached ~ log1p(dhw) | Site_ID + Date_Year, clust
 
 nc_counts_counterfactuals <- nc_open("~/Library/CloudStorage/Dropbox/Coracle/Counterfactuals_Updated/counts_counterfactuals.nc")
 nc_counts_historical <- nc_open("~/Library/CloudStorage/Dropbox/Coracle/Counterfactuals_Updated/counts_historical.nc")
-nc_lambda_counterfactuals <- nc_open("~/Library/CloudStorage/Dropbox/Coracle/Counterfactuals_Updated/lambda_counterfactuals.nc")
-nc_lambda_historical <- nc_open("~/Library/CloudStorage/Dropbox/Coracle/Counterfactuals_Updated/lambda_historical.nc")
+#nc_lambda_counterfactuals <- nc_open("~/Library/CloudStorage/Dropbox/Coracle/Counterfactuals_Updated/lambda_counterfactuals.nc")
+#nc_lambda_historical <- nc_open("~/Library/CloudStorage/Dropbox/Coracle/Counterfactuals_Updated/lambda_historical.nc")
 
 #### eda ####
 ## historical
@@ -31,8 +33,6 @@ dim(dhw_hist)
 months <- 1:12
 years <- seq(1981, 2020)  # since time size = 40
 locs <- 1:13776
-
-library(reshape2)
 
 # Convert to dataframe
 hist_df <- melt(dhw_hist, varnames = c("month", "location_id", "time"), value.name = "dhw")
@@ -85,7 +85,6 @@ all_dhw$pred_bleaching <- predict(final_model, newdata = all_dhw, type = "respon
 all_dhw_no_nas <- all_dhw %>% filter(!is.na(pred_bleaching))
 
 
-
 #### plotting ####
 # Aggregate by year and scenario
 annual_bleaching <- all_dhw %>%
@@ -108,7 +107,7 @@ ggplot(annual_bleaching, aes(x = time, y = mean_pred, color = Scenario)) +
 
 # Filter for one site
 site_id <- 12  # replace with desired location_id
-site_data <- all_dhw %>% filter(location_id == site_id)
+site_data <- all_dhw %>% filter(location_id == site_id) %>% filter(time >= 2000)
 
 # Plot predicted bleaching over time by scenario
 ggplot(site_data, aes(x = time, y = pred_bleaching, color = Scenario)) +
