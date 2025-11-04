@@ -267,12 +267,13 @@ ten_sites_info <- All_Bleaching_Events_Data_AllDHW %>%
   filter(Site_ID %in% c(8, 9498, 9469, 8521, 6270, 249, 3058, 3567, 7338, 8027)) %>%
   distinct(Site_ID, Ecoregion_Name)
 
+# Combine all 10 sites
+plot_data <- bind_rows(plot_data_list)
+
 # Merge ecoregion names into your plot data
 plot_data_named <- plot_data %>%
   left_join(ten_sites_info, by = "location_id")
 
-# Combine all 10 sites
-plot_data <- bind_rows(plot_data_list)
 
 # Verify that location_id exists
 str(plot_data$location_id)
@@ -654,6 +655,47 @@ leaf_r2 <- leaf_r2 %>%
 
 # Display the interactive map
 leaf_r2
+
+
+
+
+
+
+
+#### realm plots ####
+
+All_Bleaching_Events_Data_AllDHW <- read.csv("All_Bleaching_Events_Data_AllDHW.csv")
+
+realm_info <- All_Bleaching_Events_Data_AllDHW %>%
+  distinct(Site_ID, Realm_Name)
+
+realm_info <- realm_info %>%
+  mutate(x = row_number())
+
+# Merge the realm names into your time-series dataset
+all_ts_data_realm <- all_ts_data %>%
+  left_join(realm_info, by = c("location_id" = "x"))
+
+# Compute annual mean DHW per realm
+realm_ts_yearly <- all_ts_data_realm %>%
+  group_by(Realm_Name, year) %>%
+  summarise(mean_dhw = mean(dhw, na.rm = TRUE), .groups = "drop") %>%
+  inner_join(gmst_data, by = c("year" = "Year")) %>%
+  drop_na(mean_dhw, GMT)
+
+
+ggplot(realm_ts_yearly, aes(x = GMT, y = mean_dhw)) +
+  geom_point(color = "steelblue", size = 2) +
+  geom_smooth(method = "glm", method.args = list(family = "poisson"), se = TRUE, color = "darkred") +
+  facet_wrap(~ Realm_Name, scales = "free_y") +
+  labs(
+    title = "Relationship between Global Mean Surface Temperature (GMT) and DHW",
+    subtitle = "Aggregated by Marine Realm",
+    x = "Global Mean Surface Temperature (°C)",
+    y = "Degree Heating Weeks (DHW)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(strip.text = element_text(face = "bold"))
 
 
 
