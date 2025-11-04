@@ -88,36 +88,78 @@ all_dhw_no_nas <- all_dhw %>% filter(!is.na(pred_bleaching))
 
 
 #### plotting ####
-# Aggregate by year and scenario
-annual_bleaching <- all_dhw %>%
-  group_by(time, Scenario) %>%
+# # Aggregate by year and scenario
+# annual_bleaching <- all_dhw_no_nas %>%
+#   group_by(time, Scenario) %>%
+#   summarise(
+#     mean_pred = mean(pred_bleaching, na.rm = TRUE),
+#     median_pred = median(pred_bleaching, na.rm = TRUE)
+#   )
+# 
+# annual_bleaching <- annual_bleaching %>%
+#   filter(time >= 2000)
+# 
+# ggplot(annual_bleaching, aes(x = time, y = mean_pred, color = Scenario)) +
+#   geom_line(size = 1) +
+#   labs(title = "Predicted Bleaching: Historical vs Counterfactuals",
+#        x = "Year", y = "Mean Predicted Bleaching Probability") +
+#   theme_minimal() +
+#   scale_color_brewer(palette = "Set2")
+# 
+# 
+# # Filter for one site
+# site_id <- 5704  # replace with desired location_id
+# site_data <- all_dhw_no_nas %>% filter(location_id == site_id) %>% filter(time >= 2000)
+# 
+# # Plot predicted bleaching over time by scenario
+# ggplot(site_data, aes(x = time, y = pred_bleaching, color = Scenario)) +
+#   geom_line(size = 1.2) +
+#   labs(
+#     title = paste("Predicted Coral Bleaching Over Time - Site", site_id),
+#     x = "Year",
+#     y = "Predicted Bleaching (%)"
+#   ) +
+#   theme_minimal(base_size = 14)
+
+
+
+# 1. Aggregate predicted bleaching per site per year
+annual_bleaching_site <- all_dhw_no_nas %>%
+  group_by(location_id, time, Scenario) %>%
   summarise(
     mean_pred = mean(pred_bleaching, na.rm = TRUE),
-    median_pred = median(pred_bleaching, na.rm = TRUE)
+    median_pred = median(pred_bleaching, na.rm = TRUE),
+    n_records = n()
+  ) %>%
+  ungroup()
+
+# 2. (Optional) Aggregate again across all sites to get the overall trend
+annual_bleaching_all <- annual_bleaching_site %>%
+  group_by(time, Scenario) %>%
+  summarise(
+    mean_pred = mean(mean_pred, na.rm = TRUE),
+    median_pred = median(median_pred, na.rm = TRUE)
   )
 
-annual_bleaching <- annual_bleaching %>%
-  filter(time >= 2000)
-
-ggplot(annual_bleaching, aes(x = time, y = mean_pred, color = Scenario)) +
+# 3. Plot overall annual bleaching trend
+ggplot(annual_bleaching_all, aes(x = time, y = mean_pred, color = Scenario)) +
   geom_line(size = 1) +
   labs(title = "Predicted Bleaching: Historical vs Counterfactuals",
        x = "Year", y = "Mean Predicted Bleaching Probability") +
   theme_minimal() +
   scale_color_brewer(palette = "Set2")
 
+# 4. (Optional) Visualise bleaching for one specific site
+site_id <- 4  # replace with your desired site ID
+site_data <- annual_bleaching_site %>%
+  filter(location_id == site_id)
 
-# Filter for one site
-site_id <- 5704  # replace with desired location_id
-site_data <- all_dhw_no_nas %>% filter(location_id == site_id) %>% filter(time >= 2000)
+ggplot(site_data, aes(x = time, y = mean_pred, color = Scenario)) +
+  geom_line(size = 1) +
+  labs(title = paste("Annual Predicted Bleaching for Site", site_id),
+       x = "Year", y = "Mean Predicted Bleaching Probability") +
+  theme_minimal() +
+  scale_color_brewer(palette = "Set2")
 
-# Plot predicted bleaching over time by scenario
-ggplot(site_data, aes(x = time, y = pred_bleaching, color = Scenario)) +
-  geom_line(size = 1.2) +
-  labs(
-    title = paste("Predicted Coral Bleaching Over Time - Site", site_id),
-    x = "Year",
-    y = "Predicted Bleaching (%)"
-  ) +
-  theme_minimal(base_size = 14)
+
 
