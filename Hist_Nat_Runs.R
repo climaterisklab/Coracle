@@ -12,8 +12,10 @@ library(reshape2)
 
 #### load data and model ####
 All_Bleaching_Events_Data_AllDHW <- read.csv("All_Bleaching_Events_Data_AllDHW.csv")
-final_model <- fepois(Percent_Bleached ~ log1p(dhw) | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
-                      data = All_Bleaching_Events_Data_AllDHW)
+# final_model <- fepois(Percent_Bleached ~ log1p(dhw) | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
+#                       data = All_Bleaching_Events_Data_AllDHW)
+final_model <- fenegbin(Percent_Bleached ~ log1p(dhw) | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
+                                    data = All_Bleaching_Events_Data_AllDHW)
 
 nc_counts_counterfactuals <- nc_open("~/Library/CloudStorage/Dropbox/Coracle/Counterfactuals_Updated/counts_counterfactuals.nc")
 nc_counts_historical <- nc_open("~/Library/CloudStorage/Dropbox/Coracle/Counterfactuals_Updated/counts_historical.nc")
@@ -106,8 +108,8 @@ ggplot(annual_bleaching, aes(x = time, y = mean_pred, color = Scenario)) +
 
 
 # Filter for one site
-site_id <- 12  # replace with desired location_id
-site_data <- all_dhw %>% filter(location_id == site_id) %>% filter(time >= 2000)
+site_id <- 5704  # replace with desired location_id
+site_data <- all_dhw_no_nas %>% filter(location_id == site_id) %>% filter(time >= 2000)
 
 # Plot predicted bleaching over time by scenario
 ggplot(site_data, aes(x = time, y = pred_bleaching, color = Scenario)) +
