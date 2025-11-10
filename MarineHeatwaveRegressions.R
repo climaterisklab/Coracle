@@ -699,4 +699,37 @@ ggplot(realm_ts_yearly, aes(x = GMT, y = mean_dhw)) +
 
 
 
+library(ggplot2)
+library(MASS)
+
+ggplot(realm_ts_yearly, aes(x = GMT, y = mean_dhw)) +
+  geom_point(color = "steelblue", size = 2) +
+  
+  # Poisson fit (red)
+  geom_smooth(
+    method = "glm",
+    method.args = list(family = "poisson"),
+    se = TRUE,
+    color = "orange",
+    linetype = "solid"
+  ) +
+  
+  # Negative binomial fit (green dashed)
+  geom_smooth(
+    method = "glm",
+    method.args = list(family = MASS::negative.binomial(theta = 1)),
+    se = FALSE,
+    color = "darkgreen",
+    linetype = "dashed"
+  ) +
+  
+  facet_wrap(~ Realm_Name, scales = "free_y") +
+  labs(
+    title = "Relationship between Global Mean Surface Temperature (GMT) and DHW",
+    subtitle = "Poisson (red solid) vs. Negative Binomial (green dashed)",
+    x = "Global Mean Surface Temperature (°C)",
+    y = "Degree Heating Weeks (DHW)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(strip.text = element_text(face = "bold"))
 

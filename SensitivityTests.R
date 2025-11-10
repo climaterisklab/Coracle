@@ -565,10 +565,6 @@ p_faceted_top8 <- ggplot(model_data_top8, aes(x = dhw)) +
 
 print(p_faceted_top8)
 
-
-
-
-
 #### STEP 5: Marginal effect comparison ####
 
 ecoregion_slopes <- model_data %>%
@@ -604,106 +600,244 @@ p_slopes <- ggplot(ecoregion_slopes,
 
 print(p_slopes)
 
+# 
+# 
+# #### demeaned data and plots ####
+# # ===== 1. Create Demeaned Dataset =====
+# All_Bleaching_Events_Data_Demeaned <- All_Bleaching_Events_Data_AllDHW %>%
+#   group_by(Site_ID, Date_Year) %>%
+#   mutate(
+#     mean_log_dhw = mean(log1p(dhw), na.rm = TRUE),
+#     log_dhw_demeaned = log1p(dhw) - mean_log_dhw
+#   ) %>%
+#   ungroup()
+# 
+# # ===== 2. Fit Both Models =====
+# original_model <- fepois(
+#   Percent_Bleached ~ log1p(dhw) | Site_ID + Date_Year,
+#   cluster = ~Ecoregion_Name,
+#   data = All_Bleaching_Events_Data_AllDHW
+# )
+# 
+# demeaned_model <- fepois(
+#   Percent_Bleached ~ log_dhw_demeaned,
+#   cluster = ~Ecoregion_Name,
+#   data = All_Bleaching_Events_Data_Demeaned
+# )
+# 
+# # ===== 3. Generate Predictions =====
+# All_Bleaching_Events_Data_AllDHW$pred_original <- predict(
+#   original_model, 
+#   All_Bleaching_Events_Data_AllDHW
+# )
+# 
+# All_Bleaching_Events_Data_Demeaned$pred_demeaned <- predict(
+#   demeaned_model,
+#   All_Bleaching_Events_Data_Demeaned
+# )
+# 
+# # Prepare data for plotting
+# plot_data_fitted <- bind_rows(
+#   All_Bleaching_Events_Data_AllDHW %>%
+#     select(dhw, Percent_Bleached, predicted_bleaching = pred_original) %>%
+#     mutate(model = "Original (with FE)"),
+#   All_Bleaching_Events_Data_Demeaned %>%
+#     select(dhw, Percent_Bleached, predicted_bleaching = pred_demeaned) %>%
+#     mutate(model = "Demeaned")
+# )
+# 
+# # ===== 4. Create Plot =====
+# model_colors <- c(
+#   "Original (with FE)" = "#1b9e77",
+#   "Demeaned" = "#d95f02"
+# )
+# 
+# # Separate the data by model
+# plot_data_original <- plot_data_fitted %>% 
+#   filter(model == "Original (with FE)")
+# 
+# plot_data_demeaned <- plot_data_fitted %>% 
+#   filter(model == "Demeaned")
+# 
+# ggplot(plot_data_fitted, aes(x = dhw)) +
+#   geom_point(
+#     aes(y = Percent_Bleached),
+#     alpha = 0.25, 
+#     color = "gray50", 
+#     size = 0.8
+#   ) +
+#   # Original model - NO confidence interval
+#   geom_smooth(
+#     data = plot_data_original,
+#     aes(y = predicted_bleaching, color = model),
+#     method = "loess", 
+#     se = TRUE,  # CI for original model
+#     linewidth = 1.1, 
+#     span = 0.7, 
+#     alpha = 0.2
+#   ) +
+#   # Demeaned model - WITH confidence interval
+#   geom_smooth(
+#     data = plot_data_demeaned,
+#     aes(y = predicted_bleaching, color = model),
+#     method = "loess", 
+#     se = TRUE,  # CI for demeaned model
+#     linewidth = 1.1, 
+#     span = 0.7,
+#     alpha = 0.2
+#   ) +
+#   scale_color_manual(values = model_colors) +
+#   scale_fill_manual(values = model_colors) +
+#   labs(
+#     x = "Degree Heating Weeks (DHW)",
+#     y = "Percent Bleached",
+#     title = "Predicted Percent Bleaching vs DHW: Original vs Demeaned Model",
+#     subtitle = "Observed bleaching (gray points) with fitted curves from both model specifications",
+#     color = "Model Type",
+#   ) +
+#   theme_minimal(base_size = 13) +
+#   theme(
+#     plot.title = element_text(face = "bold", size = 15),
+#     legend.position = "bottom",
+#     legend.title = element_text(face = "bold"),
+#     panel.grid.minor = element_blank()
+#   )
+# 
 
 
-#### demeaned data and plots ####
-# ===== 1. Create Demeaned Dataset =====
-All_Bleaching_Events_Data_Demeaned <- All_Bleaching_Events_Data_AllDHW %>%
-  group_by(Site_ID, Date_Year) %>%
-  mutate(
-    mean_log_dhw = mean(log1p(dhw), na.rm = TRUE),
-    log_dhw_demeaned = log1p(dhw) - mean_log_dhw
-  ) %>%
-  ungroup()
+#### realm plots ####
+model_data_realm <- All_Bleaching_Events_Data_AllDHW %>%
+  filter(
+    !is.na(Percent_Bleached),
+    !is.na(dhw)) %>%
+  mutate(pred_poisson_log = predict(model_poisson_log, newdata = ., type = "response")) %>%
+  mutate(pred_negbin = predict(model_negative_binomial, newdata = ., type = "response")) %>%
+  filter(!is.na(pred_poisson_log))
 
-# ===== 2. Fit Both Models =====
-original_model <- fepois(
-  Percent_Bleached ~ log1p(dhw) | Site_ID + Date_Year,
-  cluster = ~Ecoregion_Name,
-  data = All_Bleaching_Events_Data_AllDHW
-)
 
-demeaned_model <- fepois(
-  Percent_Bleached ~ log_dhw_demeaned,
-  cluster = ~Ecoregion_Name,
-  data = All_Bleaching_Events_Data_Demeaned
-)
-
-# ===== 3. Generate Predictions =====
-All_Bleaching_Events_Data_AllDHW$pred_original <- predict(
-  original_model, 
-  All_Bleaching_Events_Data_AllDHW
-)
-
-All_Bleaching_Events_Data_Demeaned$pred_demeaned <- predict(
-  demeaned_model,
-  All_Bleaching_Events_Data_Demeaned
-)
-
-# Prepare data for plotting
-plot_data_fitted <- bind_rows(
-  All_Bleaching_Events_Data_AllDHW %>%
-    select(dhw, Percent_Bleached, predicted_bleaching = pred_original) %>%
-    mutate(model = "Original (with FE)"),
-  All_Bleaching_Events_Data_Demeaned %>%
-    select(dhw, Percent_Bleached, predicted_bleaching = pred_demeaned) %>%
-    mutate(model = "Demeaned")
-)
-
-# ===== 4. Create Plot =====
-model_colors <- c(
-  "Original (with FE)" = "#1b9e77",
-  "Demeaned" = "#d95f02"
-)
-
-# Separate the data by model
-plot_data_original <- plot_data_fitted %>% 
-  filter(model == "Original (with FE)")
-
-plot_data_demeaned <- plot_data_fitted %>% 
-  filter(model == "Demeaned")
-
-ggplot(plot_data_fitted, aes(x = dhw)) +
-  geom_point(
-    aes(y = Percent_Bleached),
-    alpha = 0.25, 
-    color = "gray50", 
-    size = 0.8
-  ) +
-  # Original model - NO confidence interval
-  geom_smooth(
-    data = plot_data_original,
-    aes(y = predicted_bleaching, color = model),
-    method = "loess", 
-    se = TRUE,  # CI for original model
-    linewidth = 1.1, 
-    span = 0.7, 
-    alpha = 0.2
-  ) +
-  # Demeaned model - WITH confidence interval
-  geom_smooth(
-    data = plot_data_demeaned,
-    aes(y = predicted_bleaching, color = model),
-    method = "loess", 
-    se = TRUE,  # CI for demeaned model
-    linewidth = 1.1, 
-    span = 0.7,
-    alpha = 0.2
-  ) +
-  scale_color_manual(values = model_colors) +
-  scale_fill_manual(values = model_colors) +
+ggplot(model_data_realm, aes(x = dhw)) +
+  geom_point(aes(y = Percent_Bleached),
+             alpha = 0.4, color = "gray50", size = 0.8) +
+  geom_smooth(aes(y = pred_poisson_log),
+              method = "loess", color = "red", size = 1, se = TRUE, span = 0.8) +
+  geom_smooth(aes(y = pred_negbin),
+              method = "loess", color = "blue", size = 1, se = TRUE, span = 0.8) +
+  facet_wrap(~ Realm_Name, scales = "free_y", ncol = 2) +
   labs(
     x = "Degree Heating Weeks (DHW)",
     y = "Percent Bleached",
-    title = "Predicted Percent Bleaching vs DHW: Original vs Demeaned Model",
-    subtitle = "Observed bleaching (gray points) with fitted curves from both model specifications",
-    color = "Model Type",
+    title = "Predicted Coral Bleaching by Realm (Poisson Log Model)",
+    subtitle = "Gray points = observed bleaching | Red line = model predictions with 95% CI"
   ) +
-  theme_minimal(base_size = 13) +
+  theme_minimal(base_size = 12) +
   theme(
-    plot.title = element_text(face = "bold", size = 15),
-    legend.position = "bottom",
-    legend.title = element_text(face = "bold"),
+    plot.title = element_text(face = "bold", size = 14),
+    strip.text = element_text(face = "bold", size = 10),
     panel.grid.minor = element_blank()
   )
 
+
+## binned
+library(ggplot2)
+library(dplyr)
+
+# Define bins
+custom_bins <- c(0, 4, 8, 12, 16, 20, 30)
+
+# Create binned data with actual bin boundaries
+model_data_binned <- model_data_realm %>%
+  mutate(dhw_bin = cut(dhw, breaks = custom_bins, include.lowest = TRUE)) %>%
+  group_by(Realm_Name, dhw_bin) %>%
+  summarise(
+    mean_bleached = mean(Percent_Bleached, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  filter(!is.na(dhw_bin)) %>%
+  # Extract the actual bin boundaries from the factor levels
+  mutate(
+    dhw_lower = as.numeric(sub("\\((.+),.*", "\\1", dhw_bin)),
+    dhw_lower = ifelse(is.na(dhw_lower), as.numeric(sub("\\[(.+),.*", "\\1", dhw_bin)), dhw_lower),
+    dhw_upper = as.numeric(sub("[^,]*,([^]]*)\\]", "\\1", dhw_bin))
+  )
+
+# Create the plot
+ggplot(model_data_realm, aes(x = dhw)) +
+  # Raw data points
+  geom_point(aes(y = Percent_Bleached),
+             alpha = 0.3, color = "gray50", size = 0.8) +
+  # Binned bars showing mean bleaching
+  geom_rect(
+    data = model_data_binned,
+    aes(
+      xmin = dhw_lower, 
+      xmax = dhw_upper,
+      ymin = 0,
+      ymax = mean_bleached
+    ),
+    fill = "tan",
+    alpha = 0.6,
+    inherit.aes = FALSE
+  ) +
+  # Poisson predictions
+  geom_smooth(aes(y = pred_poisson_log),
+              method = "loess", color = "red", size = 1, se = TRUE, span = 0.8) +
+  # Negative Binomial predictions
+  geom_smooth(aes(y = pred_negbin),
+              method = "loess", color = "blue", size = 1, se = TRUE, span = 0.8) +
+  facet_wrap(~ Realm_Name, scales = "free_y", ncol = 2) +
+  labs(
+    x = "Degree Heating Weeks (DHW)",
+    y = "Percent Bleached",
+    title = "Predicted Coral Bleaching by Realm",
+    subtitle = "Gray points = raw data | Tan bars = binned mean | Red = Poisson | Blue = Negative Binomial"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    strip.text = element_text(face = "bold", size = 10),
+    panel.grid.minor = element_blank()
+  )
+
+
+
+
+## confine y axis
+# Create the plot
+ggplot(model_data_realm, aes(x = dhw)) +
+  # Raw data points
+  geom_point(aes(y = Percent_Bleached),
+             alpha = 0.3, color = "gray50", size = 0.8) +
+  # Binned bars showing mean bleaching
+  geom_rect(
+    data = model_data_binned,
+    aes(
+      xmin = dhw_lower, 
+      xmax = dhw_upper,
+      ymin = 0,
+      ymax = mean_bleached
+    ),
+    fill = "tan",
+    alpha = 0.6,
+    inherit.aes = FALSE
+  ) +
+  # Poisson predictions
+  geom_smooth(aes(y = pred_poisson_log),
+              method = "loess", color = "red", size = 1, se = TRUE, span = 0.8) +
+  # Negative Binomial predictions
+  geom_smooth(aes(y = pred_negbin),
+              method = "loess", color = "blue", size = 1, se = TRUE, span = 0.8) +
+  facet_wrap(~ Realm_Name, scales = "free_y", ncol = 2) +
+  coord_cartesian(ylim = c(0, 100)) +  # Add this line
+  labs(
+    x = "Degree Heating Weeks (DHW)",
+    y = "Percent Bleached",
+    title = "Predicted Coral Bleaching by Realm",
+    subtitle = "Gray points = raw data | Tan bars = binned mean | Red = Poisson | Blue = Negative Binomial"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    strip.text = element_text(face = "bold", size = 10),
+    panel.grid.minor = element_blank()
+  )
