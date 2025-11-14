@@ -18,7 +18,7 @@ reef_eez <- reef_eez %>%
 library(ggplot2)
 
 ggplot(reef_eez) +
-  geom_sf(aes(fill = AREA_KM2), color = "grey30", size = 0.1) +
+  geom_sf(aes(fill = reef_area_km2), color = "grey30", size = 0.1) +
   scale_fill_viridis_c(
     option = "turbo",
     name = "Reef area (km²)",
