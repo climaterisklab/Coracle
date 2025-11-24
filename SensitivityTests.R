@@ -841,3 +841,376 @@ ggplot(model_data_realm, aes(x = dhw)) +
     strip.text = element_text(face = "bold", size = 10),
     panel.grid.minor = element_blank()
   )
+
+
+
+#### map of realms ####
+
+# Load required libraries
+library(ggplot2)
+library(maps)
+library(dplyr)
+
+# Get unique site locations with realm information
+site_locations <- All_Bleaching_Events_Data_AllDHW %>%
+  select(Site_ID, Latitude_Degrees, Longitude_Degrees, Realm_Name, 
+         Country_Name, Ecoregion_Name) %>%
+  distinct(Site_ID, .keep_all = TRUE)
+
+# Get world map data
+world_map <- map_data("world")
+
+# Define color palette for realms
+realm_colors <- c(
+  "Central Indo-Pacific" = "#FF6B6B",
+  "Tropical Atlantic" = "#FFEAA7",
+  "Temperate Australasia" = "#96CEB4",
+  "Western Indo-Pacific" = "#4ECDC4",
+  "Eastern Indo-Pacific" = "#45B7D1",
+  "Tropical Eastern Pacific" = "#DDA15E",
+  "Temperate Northern Pacific" = "#A29BFE"
+)
+
+# Create the map
+map_plot <- ggplot() +
+  # Add world map
+  geom_polygon(data = world_map, 
+               aes(x = long, y = lat, group = group),
+               fill = "gray95", color = "gray70", linewidth = 0.3) +
+  # Add site points
+  geom_point(data = site_locations,
+             aes(x = Longitude_Degrees, y = Latitude_Degrees, 
+                 color = Realm_Name, fill = Realm_Name),
+             size = 1, alpha = 0.8, shape = 21, stroke = 0.5) +
+  # Customize colors
+  scale_color_manual(values = realm_colors, name = "Marine Realm") +
+  scale_fill_manual(values = realm_colors, name = "Marine Realm") +
+  # Set coordinate system
+  coord_fixed(1.3, xlim = c(-180, 180), ylim = c(-60, 60)) +
+  # Customize theme
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 12, hjust = 0.5, color = "gray40"),
+    legend.position = "bottom",
+    legend.title = element_text(face = "bold"),
+    panel.grid.major = element_line(color = "gray90", linewidth = 0.3),
+    panel.grid.minor = element_blank(),
+    panel.background = element_rect(fill = "aliceblue", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  ) +
+  labs(
+    title = "Global Coral Bleaching Monitoring Sites",
+    subtitle = paste0("Distribution of ", nrow(site_locations), 
+                      " monitoring sites across marine realms"),
+    x = "Longitude",
+    y = "Latitude"
+  ) +
+  guides(color = guide_legend(nrow = 2, override.aes = list(size = 4)))
+
+# Display the map
+print(map_plot)
+
+
+# Print summary statistics
+cat("\n=== Summary Statistics ===\n")
+cat("Total unique sites:", nrow(site_locations), "\n\n")
+cat("Sites by Marine Realm:\n")
+realm_summary <- site_locations %>%
+  group_by(Realm_Name) %>%
+  summarise(n_sites = n()) %>%
+  arrange(desc(n_sites))
+print(realm_summary)
+
+cat("\n\nSites by Country (Top 10):\n")
+country_summary <- site_locations %>%
+  group_by(Country_Name) %>%
+  summarise(n_sites = n()) %>%
+  arrange(desc(n_sites)) %>%
+  head(10)
+print(country_summary)
+
+
+# Print summary statistics
+cat("\n=== Summary Statistics ===\n")
+cat("Total unique sites:", nrow(site_locations), "\n")
+cat("Total observations:", nrow(All_Bleaching_Events_Data_AllDHW), "\n\n")
+
+cat("Sites and Observations by Marine Realm:\n")
+realm_summary <- All_Bleaching_Events_Data_AllDHW %>%
+  group_by(Realm_Name) %>%
+  summarise(
+    n_observations = n(),
+    n_sites = n_distinct(Site_ID)
+  ) %>%
+  arrange(desc(n_observations))
+print(realm_summary)
+
+cat("\n\nSites by Country (Top 10):\n")
+country_summary <- site_locations %>%
+  group_by(Country_Name) %>%
+  summarise(n_sites = n()) %>%
+  arrange(desc(n_sites)) %>%
+  head(10)
+print(country_summary)
+
+# Create a bar plot showing observations by realm
+obs_plot <- ggplot(realm_summary, aes(x = reorder(Realm_Name, n_observations), 
+                                      y = n_observations, fill = Realm_Name)) +
+  geom_bar(stat = "identity", alpha = 0.8) +
+  scale_fill_manual(values = realm_colors) +
+  coord_flip() +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.position = "none",
+    panel.grid.major.y = element_blank()
+  ) +
+  labs(
+    title = "Number of Bleaching Observations by Marine Realm",
+    x = "Marine Realm",
+    y = "Number of Observations"
+  ) +
+  geom_text(aes(label = n_observations), hjust = -0.2, size = 3.5)
+
+print(obs_plot)
+
+
+
+
+#### density plot ####
+# Load required libraries
+library(ggplot2)
+library(maps)
+library(dplyr)
+library(viridis)
+
+# Get world map data
+world_map <- map_data("world")
+
+# Prepare the data - all observations with coordinates
+obs_data <- All_Bleaching_Events_Data_AllDHW %>%
+  select(Latitude_Degrees, Longitude_Degrees, Realm_Name) %>%
+  filter(!is.na(Latitude_Degrees) & !is.na(Longitude_Degrees))
+
+# Function to convert lat/lon to approximate 5km grid cells
+# At the equator, 1 degree ≈ 111 km, so 5km ≈ 0.045 degrees
+# We'll use 0.045 degrees as our grid size (approximately 5km)
+grid_size <- 1
+
+# Create 5km pixel grid
+obs_data_grid <- obs_data %>%
+  mutate(
+    # Round to nearest grid cell
+    lon_grid = round(Longitude_Degrees / grid_size) * grid_size,
+    lat_grid = round(Latitude_Degrees / grid_size) * grid_size
+  ) %>%
+  group_by(lon_grid, lat_grid) %>%
+  summarise(
+    n_observations = n(),
+    realms = paste(unique(Realm_Name), collapse = ", "),
+    .groups = "drop"
+  )
+
+# Create 5km pixel density map
+pixel_density_map <- ggplot() +
+  # Add world map
+  geom_polygon(data = world_map, 
+               aes(x = long, y = lat, group = group),
+               fill = "gray90", color = "gray70", linewidth = 0.2) +
+  # Add 5km pixels as tiles
+  geom_tile(data = obs_data_grid,
+            aes(x = lon_grid, y = lat_grid, fill = n_observations),
+            width = grid_size, height = grid_size, alpha = 0.85) +
+  # Use viridis color scale with log transformation
+  scale_fill_viridis(option = "inferno", 
+                     name = "Observations\nper 10km pixel",
+                     trans = "log10",
+                     breaks = c(1, 10, 100, 1000, 10000),
+                     labels = c("1", "10", "100", "1,000", "10,000")) +
+  # Set coordinate system
+  coord_fixed(1.3, xlim = c(-180, 180), ylim = c(-60, 60)) +
+  # Customize theme
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 12, hjust = 0.5, color = "gray40"),
+    legend.position = "right",
+    legend.title = element_text(face = "bold", size = 10),
+    legend.text = element_text(size = 9),
+    panel.grid.major = element_line(color = "gray90", linewidth = 0.3),
+    panel.grid.minor = element_blank(),
+    panel.background = element_rect(fill = "aliceblue", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  ) +
+  labs(
+    title = "Coral Bleaching Observation Density (10km Grid)",
+    subtitle = paste0("Each pixel represents a ~10km × 10km area | Total: ", 
+                      nrow(obs_data), " observations in ", 
+                      nrow(obs_data_grid), " grid cells"),
+    x = "Longitude",
+    y = "Latitude"
+  )
+
+print(pixel_density_map)
+
+
+
+
+
+
+#### creating own regions and condensing realms ####
+All_Bleaching_Events_Data_AllDHW <- All_Bleaching_Events_Data_AllDHW %>%
+  mutate(
+    Condensed_Realm = case_when(
+      Realm_Name %in% c("Central Indo-Pacific", "Temperate Australasia") ~ "Central Indo-Pacific",
+      TRUE ~ Realm_Name
+    )
+  )
+
+All_Bleaching_Events_Data_AllDHW <- All_Bleaching_Events_Data_AllDHW %>%
+  mutate(
+    Condensed_Realm2 = case_when(
+      Realm_Name %in% c("Central Indo-Pacific", "Temperate Australasia", "Eastern Indo-Pacific") ~ "Central Indo-Pacific",
+      TRUE ~ Realm_Name
+    )
+  )
+
+model_negative_binomial <- fenegbin(Percent_Bleached ~ log1p(dhw) | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
+                                    data = All_Bleaching_Events_Data_AllDHW)
+model_region_condensed_CIP <- fenegbin(Percent_Bleached ~ log1p(dhw) | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
+                                       data = All_Bleaching_Events_Data_AllDHW)
+model_region_condensed_CIP2 <- fenegbin(Percent_Bleached ~ log1p(dhw) | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
+                                       data = All_Bleaching_Events_Data_AllDHW)
+summary(model_negative_binomial)
+summary(model_region_condensed_CIP)
+summary(model_region_condensed_CIP2)
+
+
+#### Condensed Realm Plots (Version 1: CIP + Temperate Australasia) ####
+
+# Prepare data with predictions for Condensed_Realm
+model_data_realm_condensed <- All_Bleaching_Events_Data_AllDHW %>%
+  filter(
+    !is.na(Percent_Bleached),
+    !is.na(dhw)) %>%
+  mutate(pred_poisson_log = predict(model_poisson_log, newdata = ., type = "response")) %>%
+  mutate(pred_negbin = predict(model_region_condensed_CIP, newdata = ., type = "response")) %>%
+  filter(!is.na(pred_poisson_log))
+
+# Define bins
+custom_bins <- c(0, 4, 8, 12, 16, 20, 30)
+
+# Create binned data
+model_data_binned_condensed <- model_data_realm_condensed %>%
+  mutate(dhw_bin = cut(dhw, breaks = custom_bins, include.lowest = TRUE)) %>%
+  group_by(Condensed_Realm, dhw_bin) %>%
+  summarise(
+    mean_bleached = mean(Percent_Bleached, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  filter(!is.na(dhw_bin)) %>%
+  mutate(
+    dhw_lower = as.numeric(sub("\\((.+),.*", "\\1", dhw_bin)),
+    dhw_lower = ifelse(is.na(dhw_lower), as.numeric(sub("\\[(.+),.*", "\\1", dhw_bin)), dhw_lower),
+    dhw_upper = as.numeric(sub("[^,]*,([^]]*)\\]", "\\1", dhw_bin))
+  )
+
+# Create the plot with y-axis confined
+ggplot(model_data_realm_condensed, aes(x = dhw)) +
+  geom_point(aes(y = Percent_Bleached),
+             alpha = 0.3, color = "gray50", size = 0.8) +
+  geom_rect(
+    data = model_data_binned_condensed,
+    aes(
+      xmin = dhw_lower, 
+      xmax = dhw_upper,
+      ymin = 0,
+      ymax = mean_bleached
+    ),
+    fill = "tan",
+    alpha = 0.6,
+    inherit.aes = FALSE
+  ) +
+  geom_smooth(aes(y = pred_poisson_log),
+              method = "loess", color = "red", size = 1, se = TRUE, span = 0.8) +
+  geom_smooth(aes(y = pred_negbin),
+              method = "loess", color = "blue", size = 1, se = TRUE, span = 0.8) +
+  facet_wrap(~ Condensed_Realm, scales = "free_y", ncol = 2) +
+  coord_cartesian(ylim = c(0, 100)) +
+  labs(
+    x = "Degree Heating Weeks (DHW)",
+    y = "Percent Bleached",
+    title = "Predicted Coral Bleaching by Condensed Realm (v1)",
+    subtitle = "Gray points = raw data | Tan bars = binned mean | Red = Poisson | Blue = Negative Binomial"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    strip.text = element_text(face = "bold", size = 10),
+    panel.grid.minor = element_blank()
+  )
+
+
+#### Condensed Realm Plots (Version 2: CIP + Temperate Australasia + Eastern Indo-Pacific) ####
+
+# Prepare data with predictions for Condensed_Realm2
+model_data_realm_condensed2 <- All_Bleaching_Events_Data_AllDHW %>%
+  filter(
+    !is.na(Percent_Bleached),
+    !is.na(dhw)) %>%
+  mutate(pred_poisson_log = predict(model_poisson_log, newdata = ., type = "response")) %>%
+  mutate(pred_negbin = predict(model_region_condensed_CIP2, newdata = ., type = "response")) %>%
+  filter(!is.na(pred_poisson_log))
+
+# Create binned data
+model_data_binned_condensed2 <- model_data_realm_condensed2 %>%
+  mutate(dhw_bin = cut(dhw, breaks = custom_bins, include.lowest = TRUE)) %>%
+  group_by(Condensed_Realm2, dhw_bin) %>%
+  summarise(
+    mean_bleached = mean(Percent_Bleached, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  filter(!is.na(dhw_bin)) %>%
+  mutate(
+    dhw_lower = as.numeric(sub("\\((.+),.*", "\\1", dhw_bin)),
+    dhw_lower = ifelse(is.na(dhw_lower), as.numeric(sub("\\[(.+),.*", "\\1", dhw_bin)), dhw_lower),
+    dhw_upper = as.numeric(sub("[^,]*,([^]]*)\\]", "\\1", dhw_bin))
+  )
+
+# Create the plot with y-axis confined
+ggplot(model_data_realm_condensed2, aes(x = dhw)) +
+  geom_point(aes(y = Percent_Bleached),
+             alpha = 0.3, color = "gray50", size = 0.8) +
+  geom_rect(
+    data = model_data_binned_condensed2,
+    aes(
+      xmin = dhw_lower, 
+      xmax = dhw_upper,
+      ymin = 0,
+      ymax = mean_bleached
+    ),
+    fill = "tan",
+    alpha = 0.6,
+    inherit.aes = FALSE
+  ) +
+  geom_smooth(aes(y = pred_poisson_log),
+              method = "loess", color = "red", size = 1, se = TRUE, span = 0.8) +
+  geom_smooth(aes(y = pred_negbin),
+              method = "loess", color = "blue", size = 1, se = TRUE, span = 0.8) +
+  facet_wrap(~ Condensed_Realm2, scales = "free_y", ncol = 2) +
+  coord_cartesian(ylim = c(0, 100)) +
+  labs(
+    x = "Degree Heating Weeks (DHW)",
+    y = "Percent Bleached",
+    title = "Predicted Coral Bleaching by Condensed Realm (v2)",
+    subtitle = "Gray points = raw data | Tan bars = binned mean | Red = Poisson | Blue = Negative Binomial"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    strip.text = element_text(face = "bold", size = 10),
+    panel.grid.minor = element_blank()
+  )
