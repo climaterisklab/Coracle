@@ -129,3 +129,172 @@ for (j in seq_along(lags)) {
 write.csv(full_panel_data, "Panel_Data_AllDHW.csv")
 write.csv(full_panel_data, "All_Bleaching_Events_Data_AllDHW.csv")
 
+
+
+
+## doing this for mermaid data ##
+# =============================================================================
+# PART 1: Load original rasterbrick (1985-2023)
+# =============================================================================
+
+cat("=============================================================================\n")
+cat("PART 1: Extracting DHW from original data (1985-2023)\n")
+cat("=============================================================================\n\n")
+
+# Load Mermaid data
+mermaid_data <- readRDS("MermaidBleachingData.RDS")
+cat("Mermaid data loaded:", nrow(mermaid_data), "observations\n")
+cat("Date range:", min(mermaid_data$year), "-", max(mermaid_data$year), "\n\n")
+
+# Create year-month column
+mermaid_data$ym <- sprintf("%04d-%02d", mermaid_data$year, mermaid_data$month)
+
+# Load original rasterbrick (UPDATE THIS PATH to your original data)
+cat("Loading original rasterbrick...\n")
+rasterbrick_dhw_original <- rast("rasterbrick_dhw.tif")  # Or wherever your original file is
+
+cat("Original rasterbrick loaded:\n")
+cat("  Layers:", nlyr(rasterbrick_dhw_original), "\n")
+cat("  Layer names (first 5):", head(names(rasterbrick_dhw_original), 5), "\n\n")
+
+# Extract dates from original rasterbrick
+# Assuming names are like "DHW04-1985", "DHW05-1985", etc.
+# If you know the original dates you used
+start_date <- as.Date("1985-04-01")
+end_date   <- as.Date("2023-10-01")
+raster_dates_original <- seq(start_date, end_date, by = "month")
+raster_dhw_ym_original <- format(raster_dates_original, "%Y-%m")
+cat("Original DHW date range:", range(raster_dhw_ym_original), "\n\n")
+
+# Map each row's date to layer index
+idx_original <- match(mermaid_data$ym, raster_dhw_ym_original)
+
+# Check how many observations have matching data
+cat("Observations matching original DHW data:", sum(!is.na(idx_original)), "/", nrow(mermaid_data), "\n\n")
+
+# Extract DHW values from original data
+cat("Extracting DHW values from original data...\n")
+mermaid_data$dhw_original <- pbsapply(1:nrow(mermaid_data), function(i) {
+  layer_idx <- idx_original[i]
+  
+  if (is.na(layer_idx)) return(NA)
+  
+  lon <- mermaid_data$longitude[i]
+  lat <- mermaid_data$latitude[i]
+  
+  if (is.na(lon) | is.na(lat)) return(NA)
+  
+  point <- terra::vect(cbind(lon, lat), crs = terra::crs(rasterbrick_dhw_original))
+  val <- terra::extract(rasterbrick_dhw_original[[layer_idx]], point)[1, 2]
+  
+  # If NA, use 10km buffer
+  if (is.na(val)) {
+    buff <- terra::buffer(point, width = 10000)
+    vals <- terra::extract(rasterbrick_dhw_original[[layer_idx]], buff)[, 2]
+    non_na_vals <- vals[!is.na(vals)]
+    if (length(non_na_vals) > 0) {
+      val <- non_na_vals[1]
+    }
+  }
+  
+  return(val)
+})
+
+cat("\nPart 1 complete!\n")
+cat("  Observations with DHW:", sum(!is.na(mermaid_data$dhw_original)), "\n")
+cat("  DHW range:", range(mermaid_data$dhw_original, na.rm = TRUE), "°C-weeks\n\n")
+
+# =============================================================================
+# PART 2: Load new calculated files (2023-2025)
+# =============================================================================
+
+cat("=============================================================================\n")
+cat("PART 2: Extracting DHW from new calculated data (2023-2025)\n")
+cat("=============================================================================\n\n")
+
+root_dir <- "~/Library/CloudStorage/Dropbox/Coracle/NOAA DHW Data/DHW 2023 - 2025_Calculated"
+rasters_mermaid <- list.files(
+  root_dir,
+  pattern = "ct5km_dhw-max_v3.1_.*\\.nc$",
+  full.names = TRUE,
+  recursive = TRUE
+)
+
+if (length(rasters_mermaid) == 0) {
+  cat("No new DHW files found. Skipping Part 2.\n\n")
+  mermaid_data$dhw_new <- NA
+} else {
+  cat("Found", length(rasters_mermaid), "new DHW files\n")
+  
+  rasters_mermaid <- sort(rasters_mermaid)
+  rasterbrick_dhw_new <- rast(rasters_mermaid, subds = "degree_heating_week")
+  
+  # Extract dates from filenames
+  extract_date_from_filename <- function(filename) {
+    date_str <- gsub(".*_(\\d{6})\\.nc$", "\\1", basename(filename))
+    year <- as.numeric(substr(date_str, 1, 4))
+    month <- as.numeric(substr(date_str, 5, 6))
+    return(as.Date(paste(year, month, "01", sep = "-")))
+  }
+  
+  raster_dates_new <- sapply(rasters_mermaid, extract_date_from_filename)
+  raster_dates_new <- as.Date(raster_dates_new, origin = "1970-01-01")
+  names(rasterbrick_dhw_new) <- paste0("DHW", format(raster_dates_new, "%m-%Y"))
+  raster_dhw_ym_new <- format(raster_dates_new, "%Y-%m")
+  
+  cat("New DHW date range:", range(raster_dhw_ym_new), "\n\n")
+  
+  # Map each row's date to layer index
+  idx_new <- match(mermaid_data$ym, raster_dhw_ym_new)
+  
+  cat("Observations matching new DHW data:", sum(!is.na(idx_new)), "/", nrow(mermaid_data), "\n\n")
+  
+  if (sum(!is.na(idx_new)) > 0) {
+    cat("Extracting DHW values from new data...\n")
+    mermaid_data$dhw_new <- pbsapply(1:nrow(mermaid_data), function(i) {
+      layer_idx <- idx_new[i]
+      
+      if (is.na(layer_idx)) return(NA)
+      
+      lon <- mermaid_data$longitude[i]
+      lat <- mermaid_data$latitude[i]
+      
+      if (is.na(lon) | is.na(lat)) return(NA)
+      
+      point <- terra::vect(cbind(lon, lat), crs = terra::crs(rasterbrick_dhw_new))
+      val <- terra::extract(rasterbrick_dhw_new[[layer_idx]], point)[1, 2]
+      
+      # If NA, use 10km buffer
+      if (is.na(val)) {
+        buff <- terra::buffer(point, width = 10000)
+        vals <- terra::extract(rasterbrick_dhw_new[[layer_idx]], buff)[, 2]
+        non_na_vals <- vals[!is.na(vals)]
+        if (length(non_na_vals) > 0) {
+          val <- non_na_vals[1]
+        }
+      }
+      
+      return(val)
+    })
+    
+    cat("\nPart 2 complete!\n")
+    cat("  Observations with DHW:", sum(!is.na(mermaid_data$dhw_new)), "\n")
+    cat("  DHW range:", range(mermaid_data$dhw_new, na.rm = TRUE), "°C-weeks\n\n")
+  } else {
+    cat("No observations match new DHW data dates.\n\n")
+    mermaid_data$dhw_new <- NA
+  }
+}
+
+# =============================================================================
+# PART 3: Combine DHW values
+# =============================================================================
+
+cat("=============================================================================\n")
+cat("PART 3: Combining DHW values\n")
+cat("=============================================================================\n\n")
+
+# Combine: use original data where available, fill in with new data where needed
+mermaid_data$dhw <- ifelse(!is.na(mermaid_data$dhw_original), 
+                           mermaid_data$dhw_original, 
+                           mermaid_data$dhw_new)
