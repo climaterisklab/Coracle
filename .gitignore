@@ -8,3 +8,5 @@ reef_tiles/
 rasterbrick_dhw.tif
 reef_binary_v2.tif
 GIS STuff/zonal_stats.gpkg
+GIS STuff/*.gpkg
+GIS STuff/*.tif
