@@ -3,3 +3,7 @@
 .RData
 .Ruserdata
 rasterbrick_dhw.tif
+reef_tiles/
+.httr-oauth
+rasterbrick_dhw.tif
+reef_binary_v2.tif

@@ -154,7 +154,7 @@ summary(model_lag_max) ## significant but 0 lag better
 ## using negative binomial instead of poisson
 model_negative_binomial <- fenegbin(Percent_Bleached ~ log1p(dhw) | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
                                     data = All_Bleaching_Events_Data_AllDHW)
-summary(model_negative_binomial)         ## ver similar to poisson
+summary(model_negative_binomial)         ## very similar to poisson
 
 
 

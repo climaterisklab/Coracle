@@ -298,3 +298,8 @@ cat("===========================================================================
 mermaid_data$dhw <- ifelse(!is.na(mermaid_data$dhw_original), 
                            mermaid_data$dhw_original, 
                            mermaid_data$dhw_new)
+mermaid_data <- mermaid_data %>% select(-dhw_original, -dhw_new, -ym)
+
+## saving dataset
+saveRDS(mermaid_data, "MermaidBleachingData_WithDHW.RDS")
+
