@@ -1,0 +1,7 @@
+*.csv
+*.rds
+*.RDS
+*.gpkg
+*.shp
+*.tif
+.DS_Store
