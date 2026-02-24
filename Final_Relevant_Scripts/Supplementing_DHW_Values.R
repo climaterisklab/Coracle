@@ -280,7 +280,7 @@ cat("EXAMPLE 1: Verification using October 2023\n")
 cat("This will test your methodology against official NOAA data\n\n")
 
 # Uncomment to run verification:
-process_month(2022, 9, verify = TRUE)
+process_month(2025, 12, verify = TRUE)
 
 # Example 2: Calculate monthly max for November 2023 onwards
 cat("\nEXAMPLE 2: Calculate for months after October 2023\n\n")
@@ -292,7 +292,7 @@ cat("\nEXAMPLE 2: Calculate for months after October 2023\n\n")
 cat("\nEXAMPLE 3: Process multiple months (Nov 2023 - Dec 2024)\n\n")
 
 # Uncomment to process all months from Nov 2023 to Dec 2024:
-for (year in 2024:2025) {
+for (year in 2025:2025) {
   start_month <- ifelse(year == 2024, 11, 1)
   end_month <- ifelse(year == 2025, 1, 1)
 

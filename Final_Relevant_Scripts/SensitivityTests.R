@@ -9,12 +9,27 @@ library(ggplot2)
 library(tidyr)
 library(patchwork)
 library(plotly)
+library(betareg)
+library(glmmTMB)
+library(sandwich)
+library(lmtest)
+library(fixest)
 
 #### load datasets ####
 #all_bleaching_events <- read.csv("All_Bleaching_Events_Data.csv")
 #all_bleaching_events_depth_filtered <- read.csv("All_Bleaching_Events_Data_Depth_Filtered.csv")
 All_Bleaching_Events_Data_AllDHW <- read.csv("Final_Relevant_Scripts/All_Bleaching_Events_Data_AllDHW.csv")
-All_Bleaching_Events_Data_AllDHW <- read.csv("Final_Relevant_Scripts/Merged_Mermaid_Panel_Bleaching_Data.csv")
+All_Bleaching_Events_Data_AllDHW <- read.csv("Coracle_backup/Final_Relevant_Scripts/Merged_Mermaid_Panel_Bleaching_Data.csv")
+
+All_Bleaching_Events_Data_AllDHW <- All_Bleaching_Events_Data_AllDHW %>%
+  mutate(
+    Realm_Name = case_when(
+      Realm_Name == "Eastern Indo-Pacific" ~ "Tropical Eastern Pacific",
+      Realm_Name == "Temperate Australasia" ~ "Central Indo-Pacific",
+      TRUE ~ Realm_Name  # Keep all other values as is
+    )
+  )
+
 
 #Mermaid <- read.csv("Final_Relevant_Scripts/MermaidBleachingData_WithDHW.csv")
 #all_bleaching_events_depth_filtered <- All_Bleaching_Events_Data_AllDHW %>% filter(Depth_m <= 10)
@@ -159,6 +174,25 @@ model_negative_binomial <- fenegbin(Percent_Bleached ~ log1p(dhw) | Site_ID + Da
                                     data = All_Bleaching_Events_Data_AllDHW)
 summary(model_negative_binomial)         ## very similar to poisson
 
+## beta models
+# Fit beta model with site and year fixed effects
+model_beta_fe <- betareg(
+  Proportion_Bleached_Trans ~ log1p(dhw) + Site_ID_factor + Date_Year_factor,
+  data = model_data
+)
+# Fit ZOIB model (handles true 0s and 1s, no transformation needed)
+model_zoib <- glmmTMB(Proportion_Bleached ~ log1p(dhw) + (1 | Site_ID) + (1 | Date_Year),
+                      family = ordbeta(),
+                      data = model_data)
+
+## logit model
+# Fit logit model with intercept (no fixed effects for comparison)
+model_logit_intercept <- feglm(
+  Proportion_Bleached ~ 1 + log1p(dhw),
+  family = binomial(link = "logit"),
+  cluster = ~Ecoregion_Name,
+  data = model_data
+)
 
 
 #### rounding off percent bleaching to make it a proper count variable ####
@@ -279,35 +313,75 @@ ggplot(model_data, aes(x = dhw)) +
 model_data <- All_Bleaching_Events_Data_AllDHW %>%
   filter(!is.na(Percent_Bleached), !is.na(dhw))
 
-## did not add negative binomial no log because percent bleaching goes over 100
-
-# Add predictions from all relevant models
-model_data <- model_data %>%
+n_obs <- nrow(All_Bleaching_Events_Data_AllDHW %>% filter(!is.na(Percent_Bleached), !is.na(dhw)))
+model_data <- All_Bleaching_Events_Data_AllDHW %>%
+  filter(!is.na(Percent_Bleached), !is.na(dhw)) %>%
   mutate(
-    pred_linear                = predict(model_linear, newdata = ., type = "response"),
-    pred_log                   = predict(model_log, newdata = ., type = "response"),
-    pred_poisson               = predict(model_poisson, newdata = ., type = "response"),
-    pred_poisson_log           = predict(model_poisson_log, newdata = ., type = "response"),
-    pred_negative_binomial     = predict(model_negative_binomial, newdata = ., type = "response")
+    Proportion_Bleached = Percent_Bleached / 100,
+    Proportion_Bleached_Trans = (Proportion_Bleached * (n_obs - 1) + 0.5) / n_obs,
+    Site_ID_factor = factor(Site_ID),
+    Date_Year_factor = factor(Date_Year)
   )
 
-# Filter out rows with missing predictions (common for FE models)
+# Fit beta model with site and year fixed effects
+model_beta_fe <- betareg(
+  Proportion_Bleached_Trans ~ log1p(dhw) + Site_ID_factor + Date_Year_factor,
+  data = model_data
+)
+
+# Fit ZOIB model (handles true 0s and 1s, no transformation needed)
+model_zoib <- glmmTMB(Proportion_Bleached ~ log1p(dhw) + (1 | Site_ID) + (1 | Date_Year),
+                      family = ordbeta(),
+                      data = model_data)
+
+# Fit logit model with intercept (no fixed effects for comparison)
+model_logit_intercept <- feglm(
+  Proportion_Bleached ~ 1 + log1p(dhw),
+  family = binomial(link = "logit"),
+  cluster = ~Ecoregion_Name,
+  data = model_data
+)
+cat("Logit model (with intercept) fitted successfully!\n")
+cat("Intercept:", coef(model_logit_intercept)["(Intercept)"], "\n")
+cat("Coefficient (log1p(dhw)):", coef(model_logit_intercept)["log1p(dhw)"], "\n\n")
+
+
+#### Comparative model visualization ####
+model_data <- model_data %>%
+  mutate(
+    pred_linear            = predict(model_linear, newdata = ., type = "response"),
+    pred_log               = predict(model_log, newdata = ., type = "response"),
+    pred_poisson           = predict(model_poisson, newdata = ., type = "response"),
+    pred_poisson_log       = predict(model_poisson_log, newdata = ., type = "response"),
+    pred_negative_binomial = predict(model_negative_binomial, newdata = ., type = "response"),
+    pred_beta_fe           = predict(model_beta_fe, newdata = ., type = "response") * 100,
+    pred_zoib              = predict(model_zoib, newdata = ., type = "response") * 100,
+    pred_logit             = predict(model_logit_intercept, newdata = ., type = "response") * 100
+  )
+
+# Filter out rows with missing predictions
 model_data <- model_data %>%
   filter(
     !is.na(pred_linear),
     !is.na(pred_log),
     !is.na(pred_poisson),
     !is.na(pred_poisson_log),
-    !is.na(pred_negative_binomial)
+    !is.na(pred_negative_binomial),
+    !is.na(pred_beta_fe),
+    !is.na(pred_zoib),
+    !is.na(pred_logit)
   )
 
-# Reshape to long format for ggplot
+# Reshape to long format
 plot_data <- model_data %>%
   dplyr::select(
     dhw, Percent_Bleached,
     pred_linear, pred_log,
     pred_poisson, pred_poisson_log,
-    pred_negative_binomial
+    pred_negative_binomial,
+    pred_beta_fe,
+    pred_zoib,
+    pred_logit
   ) %>%
   tidyr::pivot_longer(
     cols = dplyr::starts_with("pred_"),
@@ -316,21 +390,26 @@ plot_data <- model_data %>%
   ) %>%
   dplyr::mutate(model = dplyr::recode(
     model,
-    pred_linear = "Linear",
-    pred_log = "Log(DHW)",
-    pred_poisson = "Poisson",
-    pred_poisson_log = "Poisson Log(DHW)",
-    pred_negative_binomial = "Negative Binomial (Log DHW)"
-    ))
+    pred_linear                = "Linear",
+    pred_log                   = "Log(DHW)",
+    pred_poisson               = "Poisson",
+    pred_poisson_log           = "Poisson Log(DHW)",
+    pred_negative_binomial     = "Negative Binomial (Log DHW)",
+    pred_beta_fe               = "Beta Regression (FE)",
+    pred_zoib                  = "ZOIB Ordbeta (RE)",
+    pred_logit                 = "Logistic"
+  ))
 
-
-# Define custom color palette for publication-style clarity
+# Color palette
 model_colors <- c(
-  "Linear" = "#1b9e77",
-  "Log(DHW)" = "blue",
-  "Poisson" = "purple",
-  "Poisson Log(DHW)" = "red",
-  "Negative Binomial (Log DHW)" = "orange"
+  "Linear"                       = "#1b9e77",
+  "Log(DHW)"                     = "blue",
+  "Poisson"                      = "purple",
+  "Poisson Log(DHW)"             = "red",
+  "Negative Binomial (Log DHW)"  = "orange",
+  "Beta Regression (FE)"         = "darkred",
+  "ZOIB Ordbeta (RE)"            = "darkblue",
+  "Logistic"         = "cyan4"
 )
 
 # Generate plot
@@ -338,8 +417,9 @@ ggplot(plot_data, aes(x = dhw)) +
   geom_point(aes(y = Percent_Bleached),
              alpha = 0.25, color = "gray50", size = 0.8) +
   geom_smooth(aes(y = predicted_bleaching, color = model),
-              method = "loess", se = TRUE, size = 1.1, span = 0.7) +
+              method = "loess", se = TRUE, linewidth = 1.1, span = 0.7) +
   scale_color_manual(values = model_colors) +
+  scale_y_continuous(limits = c(0, 100)) +
   labs(
     x = "Degree Heating Weeks (DHW)",
     y = "Percent Bleached",
@@ -354,6 +434,85 @@ ggplot(plot_data, aes(x = dhw)) +
     legend.title = element_text(face = "bold"),
     panel.grid.minor = element_blank()
   )
+
+
+
+## did not add negative binomial no log because percent bleaching goes over 100
+
+# Add predictions from all relevant models
+
+# model_data <- model_data %>%
+#   mutate(
+#     pred_linear                = predict(model_linear, newdata = ., type = "response"),
+#     pred_log                   = predict(model_log, newdata = ., type = "response"),
+#     pred_poisson               = predict(model_poisson, newdata = ., type = "response"),
+#     pred_poisson_log           = predict(model_poisson_log, newdata = ., type = "response"),
+#     pred_negative_binomial     = predict(model_negative_binomial, newdata = ., type = "response")
+#   )
+# 
+# # Filter out rows with missing predictions (common for FE models)
+# model_data <- model_data %>%
+#   filter(
+#     !is.na(pred_linear),
+#     !is.na(pred_log),
+#     !is.na(pred_poisson),
+#     !is.na(pred_poisson_log),
+#     !is.na(pred_negative_binomial)
+#   )
+# 
+# # Reshape to long format for ggplot
+# plot_data <- model_data %>%
+#   dplyr::select(
+#     dhw, Percent_Bleached,
+#     pred_linear, pred_log,
+#     pred_poisson, pred_poisson_log,
+#     pred_negative_binomial
+#   ) %>%
+#   tidyr::pivot_longer(
+#     cols = dplyr::starts_with("pred_"),
+#     names_to = "model",
+#     values_to = "predicted_bleaching"
+#   ) %>%
+#   dplyr::mutate(model = dplyr::recode(
+#     model,
+#     pred_linear = "Linear",
+#     pred_log = "Log(DHW)",
+#     pred_poisson = "Poisson",
+#     pred_poisson_log = "Poisson Log(DHW)",
+#     pred_negative_binomial = "Negative Binomial (Log DHW)"
+#     ))
+# 
+# 
+# # Define custom color palette for publication-style clarity
+# model_colors <- c(
+#   "Linear" = "#1b9e77",
+#   "Log(DHW)" = "blue",
+#   "Poisson" = "purple",
+#   "Poisson Log(DHW)" = "red",
+#   "Negative Binomial (Log DHW)" = "orange"
+# )
+# 
+# # Generate plot
+# ggplot(plot_data, aes(x = dhw)) +
+#   geom_point(aes(y = Percent_Bleached),
+#              alpha = 0.25, color = "gray50", size = 0.8) +
+#   geom_smooth(aes(y = predicted_bleaching, color = model),
+#               method = "loess", se = TRUE, size = 1.1, span = 0.7) +
+#   scale_color_manual(values = model_colors) +
+#   labs(
+#     x = "Degree Heating Weeks (DHW)",
+#     y = "Percent Bleached",
+#     title = "Predicted Percent Bleaching vs DHW",
+#     subtitle = "Observed bleaching (gray points) with fitted curves from multiple model specifications",
+#     color = "Model Type"
+#   ) +
+#   theme_minimal(base_size = 13) +
+#   theme(
+#     plot.title = element_text(face = "bold", size = 15),
+#     legend.position = "bottom",
+#     legend.title = element_text(face = "bold"),
+#     panel.grid.minor = element_blank()
+#   )
 
 
 #### poisson or binomial ####
@@ -713,8 +872,11 @@ model_data_realm <- All_Bleaching_Events_Data_AllDHW %>%
   filter(
     !is.na(Percent_Bleached),
     !is.na(dhw)) %>%
-  mutate(pred_poisson_log = predict(model_poisson_log, newdata = ., type = "response")) %>%
-  mutate(pred_negbin = predict(model_negative_binomial, newdata = ., type = "response")) %>%
+  mutate(
+    pred_poisson_log = predict(model_poisson_log, newdata = ., type = "response"),
+    pred_negbin = predict(model_negative_binomial, newdata = ., type = "response"),
+    pred_logit = predict(model_logit, newdata = ., type = "response") * 100  # MULTIPLY BY 100
+  ) %>%
   filter(!is.na(pred_poisson_log))
 
 
@@ -725,6 +887,8 @@ ggplot(model_data_realm, aes(x = dhw)) +
               method = "loess", color = "red", size = 1, se = TRUE, span = 0.8) +
   geom_smooth(aes(y = pred_negbin),
               method = "loess", color = "blue", size = 1, se = TRUE, span = 0.8) +
+  geom_smooth(aes(y = pred_logit),
+              method = "loess", color = "green", size = 1, se = TRUE, span = 0.8) +
   facet_wrap(~ Realm_Name, scales = "free_y", ncol = 2) +
   labs(
     x = "Degree Heating Weeks (DHW)",
@@ -748,20 +912,40 @@ library(dplyr)
 custom_bins <- c(0, 4, 8, 12, 16, 20, 30)
 
 # Create binned data with actual bin boundaries
-model_data_binned <- model_data_realm %>%
+# model_data_binned <- model_data_realm %>%
+#   mutate(dhw_bin = cut(dhw, breaks = custom_bins, include.lowest = TRUE)) %>%
+#   group_by(Realm_Name, dhw_bin) %>%
+#   summarise(
+#     mean_bleached = mean(Percent_Bleached, na.rm = TRUE),
+#     n = n(),
+#     .groups = "drop"
+#   ) %>%
+#   filter(!is.na(dhw_bin)) %>%
+#   # Extract the actual bin boundaries from the factor levels
+#   mutate(
+#     dhw_lower = as.numeric(sub("\\((.+),.*", "\\1", dhw_bin)),
+#     dhw_lower = ifelse(is.na(dhw_lower), as.numeric(sub("\\[(.+),.*", "\\1", dhw_bin)), dhw_lower),
+#     dhw_upper = as.numeric(sub("[^,]*,([^]]*)\\]", "\\1", dhw_bin))
+#   )
+
+
+binned_data <- model_data_realm %>%
   mutate(dhw_bin = cut(dhw, breaks = custom_bins, include.lowest = TRUE)) %>%
   group_by(Realm_Name, dhw_bin) %>%
   summarise(
     mean_bleached = mean(Percent_Bleached, na.rm = TRUE),
+    mean_pred_poisson = mean(pred_poisson_log, na.rm = TRUE),
+    mean_pred_negbin = mean(pred_negbin, na.rm = TRUE),
+    mean_pred_logit = mean(pred_logit, na.rm = TRUE),
     n = n(),
     .groups = "drop"
   ) %>%
   filter(!is.na(dhw_bin)) %>%
-  # Extract the actual bin boundaries from the factor levels
   mutate(
-    dhw_lower = as.numeric(sub("\\((.+),.*", "\\1", dhw_bin)),
-    dhw_lower = ifelse(is.na(dhw_lower), as.numeric(sub("\\[(.+),.*", "\\1", dhw_bin)), dhw_lower),
-    dhw_upper = as.numeric(sub("[^,]*,([^]]*)\\]", "\\1", dhw_bin))
+    bin_clean = gsub("\\[|\\]|\\(|\\)", "", dhw_bin),
+    dhw_lower = as.numeric(sub(",.*", "", bin_clean)),
+    dhw_upper = as.numeric(sub(".*,", "", bin_clean)),
+    dhw_mid = (dhw_lower + dhw_upper) / 2
   )
 
 # Create the plot
@@ -788,12 +972,14 @@ ggplot(model_data_realm, aes(x = dhw)) +
   # Negative Binomial predictions
   geom_smooth(aes(y = pred_negbin),
               method = "loess", color = "blue", size = 1, se = TRUE, span = 0.8) +
+  geom_smooth(aes(y = pred_logit),
+              method = "loess", color = "green", size = 1, se = TRUE, span = 0.8) +
   facet_wrap(~ Realm_Name, scales = "free_y", ncol = 2) +
   labs(
     x = "Degree Heating Weeks (DHW)",
     y = "Percent Bleached",
     title = "Predicted Coral Bleaching by Realm",
-    subtitle = "Gray points = raw data | Tan bars = binned mean | Red = Poisson | Blue = Negative Binomial"
+    subtitle = "Gray points = raw data | Tan bars = binned mean | Red = Poisson | Blue = Negative Binomial | Green = Logit"
   ) +
   theme_minimal(base_size = 12) +
   theme(
@@ -830,13 +1016,15 @@ ggplot(model_data_realm, aes(x = dhw)) +
   # Negative Binomial predictions
   geom_smooth(aes(y = pred_negbin),
               method = "loess", color = "blue", size = 1, se = TRUE, span = 0.8) +
+  geom_smooth(aes(y = pred_logit),
+              method = "loess", color = "green", size = 1, se = TRUE, span = 0.8) +
   facet_wrap(~ Realm_Name, scales = "free_y", ncol = 2) +
   coord_cartesian(ylim = c(0, 100)) +  # Add this line
   labs(
     x = "Degree Heating Weeks (DHW)",
     y = "Percent Bleached",
     title = "Predicted Coral Bleaching by Realm",
-    subtitle = "Gray points = raw data | Tan bars = binned mean | Red = Poisson | Blue = Negative Binomial"
+    subtitle = "Gray points = raw data | Tan bars = binned mean | Red = Poisson | Blue = Negative Binomial | Green = Logit"
   ) +
   theme_minimal(base_size = 12) +
   theme(

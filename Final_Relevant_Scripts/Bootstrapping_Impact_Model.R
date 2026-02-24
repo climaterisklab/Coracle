@@ -8,10 +8,22 @@ library(dplyr)
 library(tidyr)
 
 #### model ####
-All_Bleaching_Events_Data_AllDHW <- read.csv("Final_Relevant_Scripts/Merged_Mermaid_Panel_Bleaching_Data.csv")
-model_negative_binomial <- fenegbin(Percent_Bleached ~ log1p(dhw) | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
-                                    data = All_Bleaching_Events_Data_AllDHW)
+All_Bleaching_Events_Data_AllDHW <- read.csv("Coracle_backup/Final_Relevant_Scripts/Merged_Mermaid_Panel_Bleaching_Data.csv")
+# model_negative_binomial <- fenegbin(Percent_Bleached ~ log1p(dhw) | Site_ID + Date_Year, cluster = ~Ecoregion_Name, 
+#                                     data = All_Bleaching_Events_Data_AllDHW)
 
+#### Change to logit model ####
+# Need Proportion_Bleached (0-1) for logit - create if not already there
+All_Bleaching_Events_Data_AllDHW <- All_Bleaching_Events_Data_AllDHW %>%
+  mutate(Proportion_Bleached = Percent_Bleached / 100)
+
+# Logit model
+model_logit <- feglm(Proportion_Bleached ~ log1p(dhw) | Site_ID + Date_Year,
+                     family = binomial(link = "logit"),
+                     cluster = ~Ecoregion_Name,
+                     data = All_Bleaching_Events_Data_AllDHW)
+
+summary(model_logit)
 
 #### spatial bootstrap by ecoregion ####
 # Set seed for reproducibility
@@ -45,15 +57,17 @@ for(i in 1:n_boot) {
       mutate(boot_ecoregion_id = j)  # Track which bootstrap sample this came from
     boot_data <- rbind(boot_data, eco_data)
   }
+  boot_data <- boot_data %>%
+    mutate(Proportion_Bleached = Percent_Bleached / 100)
   
   # Fit model on bootstrap sample
   tryCatch({
-    boot_model <- fenegbin(
-      Percent_Bleached ~ log1p(dhw) | Site_ID + Date_Year,
-      cluster = ~boot_ecoregion_id,  # Cluster by bootstrap ecoregion ID
+    boot_model <- feglm(
+      Proportion_Bleached ~ log1p(dhw) | Site_ID + Date_Year,
+      family = binomial(link = "logit"),
+      cluster = ~boot_ecoregion_id,
       data = boot_data
     )
-    
     # Store coefficients
     boot_coefs[i, ] <- coef(boot_model)
     
@@ -79,7 +93,7 @@ cat("Successful iterations:", nrow(boot_results_clean), "out of", n_boot, "\n\n"
 # Calculate bootstrap statistics
 boot_summary <- data.frame(
   Coefficient = c("Intercept", "log1p(dhw)"),
-  Original = coef(model_negative_binomial),
+  Original = coef(model_logit),
   Boot_Mean = colMeans(boot_results_clean),
   Boot_SE = apply(boot_results_clean, 2, sd),
   Boot_CI_Lower = apply(boot_results_clean, 2, quantile, probs = 0.025),
@@ -96,7 +110,7 @@ hist(boot_results_clean$Intercept,
      xlab = "Coefficient Value", 
      col = "lightblue", 
      breaks = 30)
-abline(v = coef(model_negative_binomial)[1], col = "red", lwd = 2, lty = 2)
+abline(v = coef(model_logit)[1], col = "red", lwd = 2, lty = 2)
 abline(v = boot_summary$Boot_CI_Lower[1], col = "darkblue", lwd = 2, lty = 3)
 abline(v = boot_summary$Boot_CI_Upper[1], col = "darkblue", lwd = 2, lty = 3)
 
@@ -118,7 +132,7 @@ legend("topright",
 par(mfrow = c(1, 1))
 
 ## # Save bootstrap results
-write.csv(boot_results_clean, "Bootstrap_Coefficients_Impact_Model.csv", row.names = FALSE)
+write.csv(boot_results_clean, "Bootstrap_Coefficients_Impact_Model_Logit.csv", row.names = FALSE)
 
 
 
