@@ -257,4 +257,13 @@ write_csv(all_bleach_info, "All_Bleaching_Events_Data.csv")                  ## 
 write_csv(all_bleach_info_depth_filtered, "All_Bleaching_Events_Data_Depth_Filtered.csv")  
 
 
+#### added on 02/03/2026
+all_bleach_info <- all_bleach_info %>% select(Site_ID, Date_Year, Date_Month, Percent_Bleached, Latitude_Degrees, Longitude_Degrees, 
+                                              Ocean_Name, Realm_Name, Ecoregion_Name, Country_Name, Date_Day, Depth_m, 
+                                              Bleaching_Level)
+
+
+
+
+
 ## other EDA scripts saved on Puja's OneDrive <- this script is the cleaned version 

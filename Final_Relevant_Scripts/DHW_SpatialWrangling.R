@@ -25,18 +25,19 @@ rasterbrick_dhw
 nlyr(rasterbrick_dhw)
 # Define start and end dates
 start_date <- as.Date("1985-04-01")
-end_date   <- as.Date("2023-10-01")
+end_date   <- as.Date("2025-12-01")
 # Generate a monthly sequence
 date_seq <- seq(start_date, end_date, by = "month")
 # Create names like DHW4-1985, DHW5-1985, ... , DHW10-2023
 names(rasterbrick_dhw) <- paste0("DHW", format(date_seq, "%m-%Y"))
 
-writeRaster(rasterbrick_dhw, filename = "rasterbrick_dhw.tif")
+#writeRaster(rasterbrick_dhw, filename = "rasterbrick_dhw.tif")
 
 #### reading in the panel data to extract DHW values or closest non-NA DHW values ####
 ## doing this for the entire GBCD dataset and the all_bleaching_events dataset
 full_panel_data <- read.csv("Final_Relevant_Scripts/GBCD_full_data_cleaned.csv")
 full_panel_data <- read.csv("Final_Relevant_Scripts/All_Bleaching_Events_Data.csv")
+full_panel_data <- read.csv("/Users/pujapande/Library/CloudStorage/Dropbox/Coracle/panel_data_final.csv")
 
 #### extracting DHW values for each row in the panel data ####
 # Add year-month column
@@ -44,30 +45,53 @@ full_panel_data$ym <- format(
   ymd(paste(full_panel_data$Date_Year, full_panel_data$Date_Month, "01", sep = "-")),
   "%Y-%m"
 )
+library(terra)
+library(lubridate)
 
-# Raster dates
-raster_dhw_dates <- as.Date(time(rasterbrick_dhw))
-raster_dhw_ym <- format(raster_dhw_dates, "%Y-%m")
+# Check what's in the raster
+cat("Raster info:\n")
+cat("Number of layers:", nlyr(rasterbrick_dhw), "\n")
+cat("Layer names (first 10):", names(rasterbrick_dhw)[1:10], "\n\n")
 
-# Map each row's date to layer index
+# The dates are in the NAMES, not time()
+# Your raster names are like "DHW04-1985" format
+
+# Extract dates from layer names
+layer_names <- names(rasterbrick_dhw)
+
+# Parse the date format from names (assuming "DHW04-1985" = April 1985)
+raster_dhw_ym <- sapply(layer_names, function(name) {
+  # Extract month and year from "DHW04-1985" format
+  parts <- strsplit(name, "-")[[1]]
+  month_part <- gsub("DHW", "", parts[1])  # Get "04" from "DHW04"
+  year_part <- parts[2]  # Get "1985"
+  
+  paste(year_part, month_part, sep = "-")  # Return "1985-04"
+})
+
+cat("Sample parsed dates:", head(raster_dhw_ym), "\n")
+cat("Date range:", range(raster_dhw_ym), "\n\n")
+
+# Now redo the matching
 idx <- match(full_panel_data$ym, raster_dhw_ym)
 
-# Extract DHW values directly at sites (with NA handling)
+cat("Date matches found:", sum(!is.na(idx)), "out of", nrow(full_panel_data), "\n\n")
+
+# Now extract DHW
 full_panel_data$dhw <- pbsapply(1:nrow(full_panel_data), function(i) {
   layer_idx <- idx[i]
   if (is.na(layer_idx)) return(NA)
   
-  # Create point for this site
-  point <- terra::vect(cbind(full_panel_data$Longitude[i], full_panel_data$Latitude[i]), 
-                       crs = terra::crs(rasterbrick_dhw))
+  point <- terra::vect(
+    cbind(full_panel_data$Longitude_Degrees[i], full_panel_data$Latitude_Degrees[i]), 
+    crs = "EPSG:4326"
+  )
   
-  # Extract value at point
-  val <- terra::extract(rasterbrick_dhw[[layer_idx]], point)[1, 2]  # [row, column after ID]
+  val <- terra::extract(rasterbrick_dhw[[layer_idx]], point)[1, 2]
   
-  # If NA, extract from buffer and take nearest non-NA
   if (is.na(val)) {
-    buff <- terra::buffer(point, width = 10000)  # 10km buffer
-    vals <- terra::extract(rasterbrick_dhw[[layer_idx]], buff)[, 2]  # All values except ID column
+    buff <- terra::buffer(point, width = 10000)
+    vals <- terra::extract(rasterbrick_dhw[[layer_idx]], buff)[, 2]
     non_na_vals <- vals[!is.na(vals)]
     if (length(non_na_vals) > 0) {
       val <- non_na_vals[1]
@@ -77,55 +101,18 @@ full_panel_data$dhw <- pbsapply(1:nrow(full_panel_data), function(i) {
   return(val)
 })
 
-#### creating DHW lags from 0 - 5 months ####
-## efficient lag function - batch extraction
-# 1. Extract full time series for all sites in one call
-all_vals <- terra::extract(
-  rasterbrick_dhw,
-  full_panel_data[, c("Longitude_Degrees", "Latitude_Degrees")]
-)
+# Check results
+cat("\nDHW extraction results:\n")
+cat("Total rows:", nrow(full_panel_data), "\n")
+cat("With DHW:", sum(!is.na(full_panel_data$dhw)), "\n")
+cat("Missing DHW:", sum(is.na(full_panel_data$dhw)), "\n\n")
 
-# Drop the ID column
-all_vals <- as.matrix(all_vals[, -1])
-
-# 2. Create lagged variables with progress bar
-lags <- -1:5
-lagged_df <- pblapply(lags, function(L) {
-  shifted_idx <- idx - L
-  valid <- !is.na(shifted_idx) & shifted_idx > 0 & shifted_idx <= ncol(all_vals)
-  vals <- rep(NA_real_, length(idx))
-  vals[valid] <- all_vals[cbind(seq_along(idx)[valid], shifted_idx[valid])]
-  vals
-})
-
-# 3. Attach lagged columns to full_panel_data and fill NAs using buffer
-for (j in seq_along(lags)) {
-  col_name <- paste0("dhw_lag", lags[j])
-  full_panel_data[[col_name]] <- lagged_df[[j]]
-  
-  # Fill remaining NAs with buffer extraction
-  na_indices <- which(is.na(full_panel_data[[col_name]]))
-  if (length(na_indices) > 0) {
-    full_panel_data[[col_name]][na_indices] <- pbsapply(na_indices, function(i) {
-      layer_idx <- idx[i] - lags[j]
-      if (is.na(layer_idx) || layer_idx < 1 || layer_idx > nlyr(rasterbrick_dhw)) return(NA)
-      
-      point <- terra::vect(
-        cbind(full_panel_data$Longitude_Degrees[i], full_panel_data$Latitude_Degrees[i]),
-        crs = terra::crs(rasterbrick_dhw)
-      )
-      
-      buff <- terra::buffer(point, width = 10000)
-      vals <- terra::extract(rasterbrick_dhw[[layer_idx]], buff)[, 2]
-      non_na_vals <- vals[!is.na(vals)]
-      if (length(non_na_vals) > 0) return(non_na_vals[1])
-      return(NA)
-    })
-  }
-}
+head(full_panel_data %>% select(Site_ID, Date_Year, Date_Month, dhw))
 
 
 ## saving this panel data
+write.csv(full_panel_data, "~/Library/CloudStorage/Dropbox/Coracle/panel_data_final_allDHW.csv", row.names = FALSE)
+
 write.csv(full_panel_data, "Panel_Data_AllDHW.csv")
 write.csv(full_panel_data, "All_Bleaching_Events_Data_AllDHW.csv")
 

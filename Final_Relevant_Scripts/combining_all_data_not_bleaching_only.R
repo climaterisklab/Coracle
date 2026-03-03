@@ -238,32 +238,54 @@ allMermaidSampEventsTBL <- allMermaidSampEventsTBL %>% select(c(country, site_id
                                                                 reef_zone, reef_exposure, sample_date, 
                                                                 colonies_bleached_percent_bleached_avg, date, year, month, day))
 allMermaidSampEventsTBL <- allMermaidSampEventsTBL %>% select(-c(site_id, reef_type, reef_zone, reef_exposure, sample_date))
-allMermaidSampEventsTBL <- allMermaidSampEventsTBL %>% select(-c(site))
+#allMermaidSampEventsTBL <- allMermaidSampEventsTBL %>% select(-c(site))
 
 ## mermaid ecoregions
 # Load ecoregions shapefile
-ecoregions <- sf::st_read("~/Library/CloudStorage/Dropbox/Coracle/COTW2013 Ecoregion shapefiles/ecoregion_dataPolygon.shp")
+library(sf)
 
-# Convert Mermaid data to sf object with coordinates
+# Load ecoregions (in Mercator)
+ecoregions <- st_read("~/Library/CloudStorage/Dropbox/Coracle/COTW2013 Ecoregion shapefiles/ecoregion_dataPolygon.shp")
+
+# Transform to WGS84 (EPSG:4326) to match Mermaid coordinates
+ecoregions <- st_transform(ecoregions, crs = 4326)
+
+# Verify transformation worked
+cat("Ecoregions CRS after transform:", st_crs(ecoregions)$input, "\n")
+cat("Bounding box:", paste(st_bbox(ecoregions), collapse = ", "), "\n")
+
+# Make geometries valid (important!)
+ecoregions <- st_make_valid(ecoregions)
+
+# Convert Mermaid to sf
 allMermaidSampEventsTBL_sf <- allMermaidSampEventsTBL %>%
   st_as_sf(coords = c("longitude", "latitude"), crs = 4326, remove = FALSE)
 
-# Check CRS of both
-cat("Mermaid CRS:", st_crs(allMermaidSampEventsTBL_sf)$input, "\n")
-cat("Ecoregions CRS:", st_crs(ecoregions)$input, "\n")
-
-# Transform ecoregions to WGS84 (EPSG:4326) to match your data
-ecoregions <- st_transform(ecoregions, crs = 4326)
-
 # Now do the spatial join
-allMermaidSampEventsTBL <- allMermaidSampEventsTBL_sf %>%
-  st_join(ecoregions, join = st_within) %>%
-  st_drop_geometry()
+allMermaidSampEventsTBL_joined <- allMermaidSampEventsTBL_sf %>%
+  st_join(ecoregions, join = st_within)
 
-head(allMermaidSampEventsTBL)
+# Check results
+cat("\nJoin results:\n")
+cat("Total rows:", nrow(allMermaidSampEventsTBL_joined), "\n")
+cat("Rows with ecoregion:", sum(!is.na(allMermaidSampEventsTBL_joined$Ecoregion)), "\n")
+cat("Rows missing ecoregion:", sum(is.na(allMermaidSampEventsTBL_joined$Ecoregion)), "\n")
+
+# Drop geometry and clean up
+allMermaidSampEventsTBL <- allMermaidSampEventsTBL_joined %>%
+  st_drop_geometry() %>%
+  select(-c(Confirmed, Predicted, Doubtful, Absent, nid, id))  # Remove ecoregion metadata columns
+
+# Verify
+cat("\nSample of ecoregions assigned:\n")
+allMermaidSampEventsTBL %>%
+  count(Ecoregion) %>%
+  arrange(desc(n)) %>%
+  head(10)
+
+
 allMermaidSampEventsTBL <- allMermaidSampEventsTBL %>%
-  select(-c(Confirmed, Predicted, Doubtful, Absent, nid))
-
+  mutate(Site_ID = as.numeric(as.factor(site)) + 19999)
 
 #### joining mermaid data with GCBD data ####
 colnames(allMermaidSampEventsTBL)
@@ -282,7 +304,7 @@ allMermaidSampEventsTBL_clean <- allMermaidSampEventsTBL %>%
     Ecoregion_Name = Ecoregion
   ) %>%
   mutate(
-    Site_ID = id,  # Use Mermaid's id as Site_ID
+    Site_ID = Site_ID,  # Use Mermaid's id as Site_ID
     Source = "Mermaid"
   )
 
@@ -312,3 +334,40 @@ Combined_Bleaching_Data <- Combined_Bleaching_Data %>%
 
 Combined_Data <- Combined_Bleaching_Data
 write.csv(Combined_Data, "~/Library/CloudStorage/Dropbox/Coracle/GCBD Data/Combined_GCBD_Mermaid_Data.csv", row.names = FALSE)
+
+
+
+##### panel data - 02/03/2026
+panel_data <- Combined_Bleaching_Data %>%
+  filter(!is.na(Percent_Bleached)) 
+
+# removing site_id with only one observation
+panel_data <- panel_data %>%
+  group_by(Site_ID) %>%
+  filter(n() > 1) %>%
+  ungroup()
+
+## fixing ecoregions
+#change madagascar to north-east madagascar
+panel_data <- panel_data %>% 
+  mutate(Ecoregion_Name = if_else(Country_Name == "Kenya" & is.na(Ecoregion_Name), "Kenya and Tanzania coast", Ecoregion_Name)) %>%
+  mutate(Ecoregion_Name = if_else(Country_Name == "Madagascar" & is.na(Ecoregion_Name), "North and north-east Madagascar", 
+                                  Ecoregion_Name)) %>%
+  mutate(Ecoregion_Name = if_else(Country_Name == "Madagascar" & Ecoregion_Name == "North Madagascar", 
+                                  "North and north-east Madagascar", Ecoregion_Name)) %>%
+  mutate(Ecoregion_Name = if_else(Country_Name == "Tanzania" & is.na(Ecoregion_Name), "Kenya and Tanzania coast", 
+                                  Ecoregion_Name)) %>%
+  mutate(Ecoregion_Name = if_else(Country_Name == "United States" & is.na(Ecoregion_Name), "Eastern Hawaii", 
+                                  Ecoregion_Name)) 
+
+panel_data <- panel_data %>% mutate(Ecoregion_Name = if_else(Country_Name == "Mozambique" & is.na(Ecoregion_Name), 
+                                                             "North Mozambique coast", Ecoregion_Name)) %>%
+  mutate(Ecoregion_Name = if_else(Country_Name == "Philippines" & is.na(Ecoregion_Name), "South-east Philippines", 
+                                  Ecoregion_Name)) 
+  
+write.csv(panel_data, "~/Library/CloudStorage/Dropbox/Coracle/panel_data_final.csv", row.names = FALSE)
+
+
+
+
+

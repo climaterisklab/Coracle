@@ -5,3 +5,5 @@
 *.shp
 *.tif
 .DS_Store
+.Rproj.user
+.httr-oauth
