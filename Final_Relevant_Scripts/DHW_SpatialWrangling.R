@@ -315,7 +315,7 @@ all_vals_mermaid <- terra::extract(
 all_vals_mermaid <- as.matrix(all_vals_mermaid[, -1])
 
 # Create lagged variables
-lags <- -1:5
+lags <- -3:5
 lagged_df_mermaid <- pblapply(lags, function(L) {
   shifted_idx <- idx_mermaid - L
   valid <- !is.na(shifted_idx) & shifted_idx > 0 & shifted_idx <= ncol(all_vals_mermaid)
