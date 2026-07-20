@@ -44,9 +44,10 @@ Pipeline
 │   └── Figure3.R                                # coral bleaching source attribution bar charts
 └── F - Figure generation for supplement
     ├── Fig_S6.R                                 # attribution panels by country/company (Fig. S6)
-    └── Plot_Supp1_and_12.R                      # model response curves and site map (Figs. S1, S12)
+    ├── Plot_Supp1.R                              # model response curves with FE-binned estimates (Fig. S1)
+    └── Plot_Supp12.R                             # global map of panel bleaching survey sites (Fig. S12)
 ```
-
+    
 ## Statistical framework
 
 The primary impact model is a linear fixed-effects specification (`feols`, `fixest` package):
