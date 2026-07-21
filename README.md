@@ -27,25 +27,25 @@ All R scripts to execute the data merging, modelling, and visualisation are stor
 ```
 Pipeline
 ├── A - Data preparation
-│   └── Merging_GCBD_MERMAID.R                   # merge GCBD + MERMAID into a site-year panel; extract DHW
+│   └── 01_Merging_and_Cleaning_GCBD_MERMAID.R                   # merge GCBD + MERMAID into a site-year panel; extract DHW
 ├── B - Model estimation
-│   └── VCOV_Conley_Errors.R                     # primary linear FE + FE-binned DHW models with Conley (200km) SEs
+│   └── 02_VCOV_Conley_Errors.R                     # primary linear FE + FE-binned DHW models with Conley (200km) SEs
 ├── C - Sensitivity analyses
-│   └── Sensitivity_Analyses.R                   # robustness checks: model type, clustering, lags, polynomial DHW,
+│   └── 03_Sensitivity_Analyses.R                   # robustness checks: model type, clustering, lags, polynomial DHW,
 │                                                 #   MPA interactions, seasonality FE, DHW specification
 ├── D - HPC pipeline
-│   ├── setup_linear_lat_conley_season.R         # prepares inputs/environment for the batch run
-│   ├── mc_batch_linear_lat_conley_season.R      # Monte Carlo batch estimation script run on each HPC node
-│   ├── slurm_setup_linear_lat_conley_season.sh  # SLURM submission script for the setup step
-│   └── slurm_mc_linear_lat_conley_season.sh     # SLURM submission script for the batch MC run
+│   ├── 04_HPC_Scripts/setup_linear_lat_conley_season.R         # prepares inputs/environment for the batch run
+│   ├── 04_HPC_Scripts/mc_batch_linear_lat_conley_season.R      # Monte Carlo batch estimation script run on each HPC node
+│   ├── 04_HPC_Scripts/slurm_setup_linear_lat_conley_season.sh  # SLURM submission script for the setup step
+│   └── 04_HPC_Scripts/slurm_mc_linear_lat_conley_season.sh     # SLURM submission script for the batch MC run
 │
 ├── E - Figure generation for main text
-│   ├── Figure1.R                                # emissions/GMT time series + DHW response + coefficient panels
-│   └── Figure3.R                                # coral bleaching source attribution bar charts
+│   ├── 05_Figure1.R                                # emissions/GMT time series + DHW response + coefficient panels
+│   └── 06_Figure3.R                                # coral bleaching source attribution bar charts
 └── F - Figure generation for supplement
-    ├── Fig_S6.R                                 # attribution panels by country/company (Fig. S6)
-    ├── Plot_Supp1.R                              # model response curves with FE-binned estimates (Fig. S1)
-    └── Plot_Supp12.R                             # global map of panel bleaching survey sites (Fig. S12)
+    ├── 07_FigureSupp1.R                                 # attribution panels by country/company (Fig. S6)
+    ├── 08_FigureSupp6.R                              # model response curves with FE-binned estimates (Fig. S1)
+    └── 09_FigureSupp12.R                             # global map of panel bleaching survey sites (Fig. S12)
 ```
     
 ## Statistical framework
