@@ -14,7 +14,7 @@ Other scripts, including those used to generate GMST counterfactuals using the F
 ## Data
 All data used in this analysis draw on two coral bleaching survey databases and one climate data product:
 
-- **Global Coral Bleaching Database (GCBD):** [Global Coral Bleaching Database SQLite v11_24_21](https://github.com/beyerca/GCBD) — site, sample, cover, and bleaching prevalence records.
+- **Global Coral Bleaching Database (GCBD):** [Global Coral Bleaching Database SQLite v11_24_21](https://springernature.figshare.com/articles/dataset/Global_Coral_Bleaching_Database/17076287?file=31573421) — site, sample, cover, and bleaching prevalence records.
 - **MERMAID:** [datamermaid.org](https://datamermaid.org/) — coral reef monitoring data, accessed via the `mermaidr` R package.
 - **NOAA Coral Reef Watch Degree Heating Week (DHW):** [NOAA CRW DHW v3.1](https://coralreefwatch.noaa.gov/product/5km/index_5km_dhw.php) — monthly 5km-resolution thermal stress data, 1985–2025.
 
