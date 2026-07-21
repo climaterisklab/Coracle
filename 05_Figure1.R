@@ -318,8 +318,12 @@ p_binned <- ggplot() +
 
 All_Bleaching_Events_Data_AllDHW <- read.csv("path/to/Coracle/Datasets/Final_Panel_Data_allDHW_01July.csv")
 All_Bleaching_Events_Data_AllDHW$abs_lat <- abs(All_Bleaching_Events_Data_AllDHW$Latitude_Degrees)
+All_Bleaching_Events_Data_AllDHW <- All_Bleaching_Events_Data_AllDHW %>%
+  mutate(
+    Ecoregion_Month = interaction(Ecoregion_Name, Date_Month, drop = TRUE)
+  )
 model_linear_lat <- feols(
-  Percent_Bleached ~ dhw + dhw:abs_lat | Site_ID + Date_Year,
+  Percent_Bleached ~ dhw + dhw:abs_lat | Site_ID + Date_Year + Ecoregion_Month,
   cluster = ~Ecoregion_Name,
   data    = All_Bleaching_Events_Data_AllDHW
 )
