@@ -203,7 +203,7 @@ library(dplyr)
 library(lubridate)
 
 #### Get data from MERMAID for creating aggregate visualizations ####
-projects <- mermaid_get_my_projects()
+#projects <- mermaid_get_my_projects()
 allMermaidSampEventsTBL <- mermaidr::mermaid_get_summary_sampleevents()
 
 allMermaidSampEventsTBL <- allMermaidSampEventsTBL %>% filter(!is.na(colonies_bleached_percent_bleached_avg))
