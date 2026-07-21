@@ -20,6 +20,8 @@ All data used in this analysis draw on two coral bleaching survey databases and 
 
 Site-level bleaching records from GCBD and MERMAID are deduplicated and merged into a single site-year panel, with DHW extracted per observation.
 
+Other data referenced in the scripts can be found here: https://www.dropbox.com/scl/fo/otfp6bzipjcjoc8iafyhl/ADucfteBxwoVWzrd7e8emHU?rlkey=2o35hszvnkwctdo5lc1jg3z79&st=0adhkm37&dl=0. 
+
 ## Code
 
 All R scripts to execute the data merging, modelling, and visualisation are stored in the `main` directory:
