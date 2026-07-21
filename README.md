@@ -63,7 +63,7 @@ with Conley (200km, spherical) standard errors clustered by ecoregion.
 1. Clone this repository.
 2. Obtain the GCBD SQLite database and NOAA CRW DHW `.nc` files (see Data section above), and a MERMAID account/API access for `mermaidr`.
 3. Edit the file paths at the top of each script (currently set to local Dropbox paths) to point to your own data directory.
-4. Run scripts in the order shown in the Code section: data preparation → model estimation → sensitivity analyses → script 1-8 of Max's repository → HPC pipeline → figures.
+4. Run scripts in the order shown in the Code section: A. Data preparation → B. Model estimation → C. Sensitivity analyses → Scripts 01-08 of Max's repository → D. HPC pipeline → E and F. Figure generation.
 
 ## Use of code and data
 
