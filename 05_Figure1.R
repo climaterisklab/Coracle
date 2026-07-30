@@ -74,12 +74,12 @@ dhw_annual <- data.frame(
 
 bleaching_obs <- data %>%
   group_by(Date_Year, Site_ID) %>%
-  summarise(site_mean = mean(Percent_Bleached, na.rm = TRUE), .groups = "drop") %>%
+  summarise(site_max = max(Percent_Bleached, na.rm = TRUE), .groups = "drop") %>%
   group_by(Date_Year) %>%
   summarise(
-    mean_bleaching_obs = mean(site_mean, na.rm = TRUE),
-    ci_lo_bleaching    = pmax(mean(site_mean) - 1.96 * sd(site_mean) / sqrt(n()), 0),
-    ci_hi_bleaching    = mean(site_mean) + 1.96 * sd(site_mean) / sqrt(n()),
+    mean_bleaching_obs = mean(site_max, na.rm = TRUE),
+    ci_lo_bleaching    = pmax(mean(site_max) - 1.96 * sd(site_max) / sqrt(n()), 0),
+    ci_hi_bleaching    = mean(site_max) + 1.96 * sd(site_max) / sqrt(n()),
     .groups = "drop"
   ) %>% rename(year = Date_Year)
 
@@ -157,7 +157,7 @@ p_bleach_donor <- ggplot(left_df_1985, aes(x = year, y = mean_bleaching_obs)) +
   scale_x_continuous(limits = c(1985, 2024), expand = c(0, 0)) +
   scale_y_continuous(limits = c(0, 50), breaks = seq(0, 50, by = 10),
                      position = "right", expand = c(0, 0)) +
-  labs(y = "Mean bleaching across sites (%)") +
+  labs(y = "Mean maximum bleaching across sites (%)") +
   theme_classic(base_size = BS, base_family = "Arial") +
   theme(
     axis.title.y.right        = element_text(colour = "#D55E00", size = AT,
