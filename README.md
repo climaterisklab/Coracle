@@ -6,7 +6,7 @@ Note that this repository contains the code necessary to:
 1. Merge and clean site-level bleaching records from GCBD and MERMAID, and extract DHW for each observation.
 2. Estimate the primary linear and FE-binned DHW models with Conley (200km) standard errors, and run associated sensitivity/robustness analyses.
 3. All scripts necessary to run the pipeline on an HPC cluster.
-4. Generate Figures 1 and 3, Supplementary Figures S1, S6, and S12 and, Extended Data Figure 6.
+4. Generate Figures 1 and 3, Supplementary Figures S1, S6, and S12, as well as Tables S7-S10 and, Extended Data Figure 6.
 
 Other scripts, including those used to generate GMST counterfactuals using the FaIR simple climate model, DHW counterfactuals using pattern scaling and block-bootstrap uncertainty estimates, and plotting scripts for Figures 2 and 4, all other Extended Data Figures, and the remaining SI Figures, can be found at the other GitHub repository. https://github.com/maxkotz17/Coracle_maxkotz.git, maintained by maximilian.kotz@bsc.es.
 
@@ -44,10 +44,11 @@ Pipeline
 ├── E - Figure generation for main text
 │   ├── 05_Figure1.R                                # emissions/GMT time series + DHW response + coefficient panels
 │   └── 06_Figure3.R                                # coral bleaching source attribution bar charts
-└── F - Figure generation for supplement
+└── F - Figure and table generation for supplement
     ├── 07_FigureSupp1.R                                 # attribution panels by country/company (Fig. S6)
     ├── 08_FigureSupp6.R                              # model response curves with FE-binned estimates (Fig. S1)
-    └── 09_FigureSupp12.R                             # global map of panel bleaching survey sites (Fig. S12)
+    ├── 09_FigureSupp12.R                             # global map of panel bleaching survey sites (Fig. S12)
+    └── 10_TablesSupp7-10.R                             # attribution tables (Tbls. S7-S10)
 ```
     
 ## Statistical framework
@@ -65,7 +66,7 @@ with Conley (200km, spherical) standard errors clustered by ecoregion.
 1. Clone this repository.
 2. Obtain the GCBD SQLite database and NOAA CRW DHW `.nc` files (see Data section above), and a MERMAID account/API access for `mermaidr`.
 3. Edit the file paths at the top of each script (currently set to local Dropbox paths) to point to your own data directory.
-4. Run scripts in the order shown in the Code section: A. Data preparation → B. Model estimation → C. Sensitivity analyses → Scripts 01-08 of Max's repository → D. HPC pipeline → E and F. Figure generation.
+4. Run scripts in the order shown in the Code section: A. Data preparation → B. Model estimation → C. Sensitivity analyses → Scripts 01-08 of Max's repository → D. HPC pipeline → E. and F. Figure and table generation.
 
 ## Use of code and data
 
