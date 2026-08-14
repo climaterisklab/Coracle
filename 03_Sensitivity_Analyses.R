@@ -48,54 +48,54 @@ All_Bleaching_Events_Data_AllDHW_Max <- left_join(All_Bleaching_Events_Data_AllD
 #### different model types ####
 model_linear <- feols(
   Percent_Bleached ~ dhw | Site_ID + Date_Year + Ecoregion_Month, 
-  cluster = ~Ecoregion_Name, 
+  #cluster = ~Ecoregion_Name, 
   data = All_Bleaching_Events_Data_AllDHW)
 
 model_linear_lat <- feols(
   Percent_Bleached ~ dhw + dhw:abs_lat | Site_ID + Date_Year + Ecoregion_Month,
-  cluster = ~Ecoregion_Name,
+  #cluster = ~Ecoregion_Name,
   data    = All_Bleaching_Events_Data_AllDHW
 )
 
 model_linear_turbidity <- feols(
   Percent_Bleached ~ dhw + dhw:Turbidity | Site_ID + Date_Year + Ecoregion_Month,
-  cluster = ~Ecoregion_Name,
+  #cluster = ~Ecoregion_Name,
   data = All_Bleaching_Events_Data_AllDHW
 )
 
 model_linear_depth <- feols(
   Percent_Bleached ~ dhw + dhw:Depth_m | Site_ID + Date_Year + Ecoregion_Month,
-  cluster = ~Ecoregion_Name,
+  #cluster = ~Ecoregion_Name,
   data = All_Bleaching_Events_Data_AllDHW
 )
 
 model_linear_dhw_std <- feols(
   Percent_Bleached ~ dhw + dhw:DHW_1985.2005_std | Site_ID + Date_Year + Ecoregion_Month,
-  cluster = ~Ecoregion_Name,
+  #cluster = ~Ecoregion_Name,
   data = All_Bleaching_Events_Data_AllDHW_Max
 )
 
 model_linear_hotspot_std <- feols(
   Percent_Bleached ~ dhw + dhw:hotspot_1985.2005_std | Site_ID + Date_Year + Ecoregion_Month,
-  cluster = ~Ecoregion_Name,
+  #cluster = ~Ecoregion_Name,
   data = All_Bleaching_Events_Data_AllDHW_Max
 )
 
 model_linear_hotspot_warming <- feols(
   Percent_Bleached ~ dhw + dhw:hotspot_warming | Site_ID + Date_Year + Ecoregion_Month,
-  cluster = ~Ecoregion_Name,
+  #cluster = ~Ecoregion_Name,
   data = All_Bleaching_Events_Data_AllDHW_Max
 )
 
 model_linear_lat_depth <- feols(
   Percent_Bleached ~ dhw + dhw:abs_lat + dhw:Depth_m | Site_ID + Date_Year + Ecoregion_Month,
-  cluster = ~Ecoregion_Name,
+  #cluster = ~Ecoregion_Name,
   data = All_Bleaching_Events_Data_AllDHW_Max
 )
 
 model_linear_lat_hotspot <- feols(
   Percent_Bleached ~ dhw + dhw:abs_lat + dhw:hotspot_1985.2005_std | Site_ID + Date_Year + Ecoregion_Month,
-  cluster = ~Ecoregion_Name,
+  #cluster = ~Ecoregion_Name,
   data = All_Bleaching_Events_Data_AllDHW_Max
 )
 
@@ -167,7 +167,7 @@ All_Bleaching_Events_Data_AllDHW_MPA <- bleaching_with_mpa %>%
 #### Run MPA model ####
 model_linear_mpa <- feols(
   Percent_Bleached ~ dhw + dhw:in_mpa | Site_ID + Date_Year + Ecoregion_Month,
-  cluster = ~Ecoregion_Name,
+  #cluster = ~Ecoregion_Name,
   data    = All_Bleaching_Events_Data_AllDHW_MPA
 )
 
@@ -189,23 +189,32 @@ model_linear_site <- feols(
 
 
 #### lag sensitivity test ####
-model_lagminus3 <- feols(Percent_Bleached ~ dhw_lag.3 + dhw_lag.3:abs_lat | Site_ID + Date_Year + Ecoregion_Month, cluster = ~Ecoregion_Name, 
+model_lagminus3 <- feols(Percent_Bleached ~ dhw_lag.3 + dhw_lag.3:abs_lat | Site_ID + Date_Year + Ecoregion_Month, 
+                         #cluster = ~Ecoregion_Name, 
                          data = All_Bleaching_Events_Data_AllDHW)
-model_lagminus2 <- feols(Percent_Bleached ~ dhw_lag.2 + dhw_lag.2:abs_lat | Site_ID + Date_Year + Ecoregion_Month, cluster = ~Ecoregion_Name, 
+model_lagminus2 <- feols(Percent_Bleached ~ dhw_lag.2 + dhw_lag.2:abs_lat | Site_ID + Date_Year + Ecoregion_Month, 
+                         #cluster = ~Ecoregion_Name, 
                          data = All_Bleaching_Events_Data_AllDHW)
-model_lagminus1 <- feols(Percent_Bleached ~ dhw_lag.1 + dhw_lag.1:abs_lat | Site_ID + Date_Year + Ecoregion_Month, cluster = ~Ecoregion_Name, 
+model_lagminus1 <- feols(Percent_Bleached ~ dhw_lag.1 + dhw_lag.1:abs_lat | Site_ID + Date_Year + Ecoregion_Month, 
+                         #cluster = ~Ecoregion_Name, 
                          data = All_Bleaching_Events_Data_AllDHW)
-model_lag0 <- feols(Percent_Bleached ~ dhw_lag0 + dhw_lag0:abs_lat | Site_ID + Date_Year + Ecoregion_Month, cluster = ~Ecoregion_Name, 
+model_lag0 <- feols(Percent_Bleached ~ dhw_lag0 + dhw_lag0:abs_lat | Site_ID + Date_Year + Ecoregion_Month, 
+                    #cluster = ~Ecoregion_Name, 
                     data = All_Bleaching_Events_Data_AllDHW)
-model_lag1 <- feols(Percent_Bleached ~ dhw_lag1 + dhw_lag1:abs_lat | Site_ID + Date_Year + Ecoregion_Month, cluster = ~Ecoregion_Name, 
+model_lag1 <- feols(Percent_Bleached ~ dhw_lag1 + dhw_lag1:abs_lat | Site_ID + Date_Year + Ecoregion_Month, 
+                    #cluster = ~Ecoregion_Name, 
                     data = All_Bleaching_Events_Data_AllDHW)
-model_lag2 <- feols(Percent_Bleached ~ dhw_lag2 + dhw_lag2:abs_lat | Site_ID + Date_Year + Ecoregion_Month, cluster = ~Ecoregion_Name, 
+model_lag2 <- feols(Percent_Bleached ~ dhw_lag2 + dhw_lag2:abs_lat | Site_ID + Date_Year + Ecoregion_Month, 
+                    #cluster = ~Ecoregion_Name, 
                     data = All_Bleaching_Events_Data_AllDHW)
-model_lag3 <- feols(Percent_Bleached ~ dhw_lag3 + dhw_lag3:abs_lat| Site_ID + Date_Year + Ecoregion_Month, cluster = ~Ecoregion_Name, 
+model_lag3 <- feols(Percent_Bleached ~ dhw_lag3 + dhw_lag3:abs_lat| Site_ID + Date_Year + Ecoregion_Month, 
+                    #cluster = ~Ecoregion_Name, 
                     data = All_Bleaching_Events_Data_AllDHW)
-model_lag4 <- feols(Percent_Bleached ~ dhw_lag4 + dhw_lag4:abs_lat| Site_ID + Date_Year + Ecoregion_Month, cluster = ~Ecoregion_Name, 
+model_lag4 <- feols(Percent_Bleached ~ dhw_lag4 + dhw_lag4:abs_lat| Site_ID + Date_Year + Ecoregion_Month, 
+                    #cluster = ~Ecoregion_Name, 
                     data = All_Bleaching_Events_Data_AllDHW)
-model_lag5 <- feols(Percent_Bleached ~ dhw_lag5 + dhw_lag5:abs_lat| Site_ID + Date_Year + Ecoregion_Month, cluster = ~Ecoregion_Name, 
+model_lag5 <- feols(Percent_Bleached ~ dhw_lag5 + dhw_lag5:abs_lat| Site_ID + Date_Year + Ecoregion_Month, 
+                    #cluster = ~Ecoregion_Name, 
                     data = All_Bleaching_Events_Data_AllDHW)
 
 
@@ -213,27 +222,27 @@ model_lag5 <- feols(Percent_Bleached ~ dhw_lag5 + dhw_lag5:abs_lat| Site_ID + Da
 #### Quadratic DHW models ####
 model_quadratic <- feols(
   Percent_Bleached ~ dhw + I(dhw^2) | Site_ID + Date_Year + Ecoregion_Month,
-  cluster = ~Ecoregion_Name,
+  #cluster = ~Ecoregion_Name,
   data    = All_Bleaching_Events_Data_AllDHW
 )
 
 model_quadratic_lat <- feols(
   Percent_Bleached ~ dhw + I(dhw^2) + dhw:abs_lat + I(dhw^2):abs_lat | Site_ID + Date_Year + Ecoregion_Month,
-  cluster = ~Ecoregion_Name,
+  #cluster = ~Ecoregion_Name,
   data    = All_Bleaching_Events_Data_AllDHW
 )
 
 #### Cubic DHW models ####
 model_cubic <- feols(
   Percent_Bleached ~ dhw + I(dhw^2) + I(dhw^3) | Site_ID + Date_Year + Ecoregion_Month,
-  cluster = ~Ecoregion_Name,
+  #cluster = ~Ecoregion_Name,
   data    = All_Bleaching_Events_Data_AllDHW
 )
 
 model_cubic_lat <- feols(
   Percent_Bleached ~ dhw + I(dhw^2) + I(dhw^3) +
     dhw:abs_lat + I(dhw^2):abs_lat + I(dhw^3):abs_lat | Site_ID + Date_Year + Ecoregion_Month,
-  cluster = ~Ecoregion_Name,
+  #cluster = ~Ecoregion_Name,
   data    = All_Bleaching_Events_Data_AllDHW
 )
 
