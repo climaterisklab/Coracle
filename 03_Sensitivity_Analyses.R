@@ -26,9 +26,10 @@ library(flextable)
 library(officer)
 library(kableExtra)
 
-# modelsummary defaults to the 'tinytable' backend for LaTeX; make_latex_table()
-# below relies on kableExtra::add_header_above()/footnote(), so force that backend.
-options(modelsummary_factory_latex = "kableExtra")
+# modelsummary >= 2.0 defaults output = "latex" to its 'tinytable' backend.
+# make_latex_table() below needs a real kableExtra object instead (it calls
+# kableExtra::add_header_above()/footnote()), so it explicitly passes
+# output = "kableExtra", format = "latex" per-call — see that function.
 
 
 #### load datasets ####
@@ -303,6 +304,7 @@ model_cubic_lat_vcov <- conley_vcov(model_cubic_lat)
 
 
 
+
 #### Custom styling function ####
 # Mimics the classic 3-line journal regression table (e.g. Table S2 style):
 # italicized "Dependent variable:" spanning header, rule under headers,
@@ -336,6 +338,68 @@ nature_table_style <- function(ft, dv_label = "Dependent variable: Percent Bleac
   ft %>%
     autofit() %>%
     width(width = 1.2, unit = "in")
+}
+
+#### Insert the missing rule between the coefficient block and the GOF block ####
+# modelsummary's "kableExtra" + format = "latex" output only emits ONE
+# \midrule (below the header row) — unlike the flextable/docx tables built
+# with nature_table_style() (which insert this rule themselves via
+# hline()), nothing here adds the second rule that should separate the
+# coefficient rows from Observations/R2/etc. This inserts it directly above
+# the first GOF row, which also gives add_coef_row_spacing() (below) the
+# two \midrules it needs to find the coefficient block's boundaries — with
+# only one present, it was silently no-op-ing.
+add_gof_rule <- function(tex_text) {
+  lines      <- strsplit(tex_text, "\n")[[1]]
+  gof_labels <- c("Num.Obs.", "R2", "R2 Adj.", "AIC", "BIC", "RMSE", "Std.Errors")
+  first_col  <- sub("^\\s*([^&]*?)\\s*&.*$", "\\1", lines)
+  gof_idx    <- which(first_col %in% gof_labels)
+  if (length(gof_idx) == 0) return(tex_text)
+  paste(append(lines, "\\midrule", after = min(gof_idx) - 1), collapse = "\n")
+}
+
+#### Strip stray &nbsp; placeholders modelsummary leaks into multi-model headers ####
+# With >= 2 models, modelsummary inserts a literal "&nbsp;" (an HTML
+# non-breaking-space placeholder) before every model column after the
+# first — apparently a spacer meant for HTML output that isn't stripped for
+# the "kableExtra" + format = "latex" path. With escape = TRUE this would
+# just render as literal text, but make_latex_table needs escape = FALSE
+# (coef_rename uses real LaTeX macros like \parbox), so the "&" in "&nbsp;"
+# comes through as an actual extra column separator — LaTeX then errors
+# with "Extra alignment tab has been changed to \cr" since the row has one
+# more "&" than the table has columns.
+strip_stray_nbsp <- function(tex_text) {
+  gsub("&nbsp;", "", tex_text, fixed = TRUE)
+}
+
+#### Split two-line \parbox coefficient labels across the estimate/SE row pair ####
+# coef_rename can label a term with a 2-line \parbox[t]{w}{\raggedright L1 \\ L2}
+# (e.g. "DHW ×" / "Turbidity"). Left as a single cell, L1 sits on the estimate's
+# row but L2 just hangs in the dead space the tall parbox adds below it, before
+# the (separate, pre-existing) std.-error row even starts — so the SE doesn't
+# sit flush under the estimate. This moves L2 out of the parbox and into that
+# next row's currently-empty label cell instead, so L1 pairs with the
+# estimate and L2 pairs with the SE directly beneath it, both flush.
+split_two_line_coef_labels <- function(tex_text) {
+  lines <- strsplit(tex_text, "\n")[[1]]
+  pat <- r"(^(\\parbox\[t\]\{[^}]*\}\{\\raggedright\s*)(.+?)\s*\\\\\s*(.+?)(\})(\s*&.*)$)"
+
+  for (i in seq_along(lines)) {
+    m <- regmatches(lines[i], regexec(pat, lines[i]))[[1]]
+    if (length(m) == 0) next
+
+    line1 <- m[3]
+    line2 <- m[4]
+    rest  <- m[6]
+
+    lines[i] <- paste0(line1, rest)
+
+    if (i + 1 <= length(lines) && grepl(r"(^\s*&)", lines[i + 1])) {
+      lines[i + 1] <- sub(r"(^\s*&)", paste0(line2, " &"), lines[i + 1])
+    }
+  }
+
+  paste(lines, collapse = "\n")
 }
 
 #### Add a small gap between different coefficients' rows ####
@@ -404,6 +468,12 @@ make_latex_table <- function(models, vcov_list, coef_rename, gof_omit,
                               dv_label = "Percent Bleached (\\%)",
                               stars = c('*' = 0.05, '**' = 0.01)) {
 
+  # modelsummary >= 2.0 routes output = "latex" through its new tinytable
+  # renderer, not kableExtra, regardless of the modelsummary_factory_latex
+  # option below (that option is from the pre-2.0 API and no longer has any
+  # effect). output = "kableExtra" + format = "latex" is what actually
+  # returns a kableExtra object rendering LaTeX, which the
+  # add_header_above()/footnote() calls below require.
   tab <- modelsummary(
     models,
     vcov        = vcov_list,
@@ -414,7 +484,8 @@ make_latex_table <- function(models, vcov_list, coef_rename, gof_omit,
     coef_rename = coef_rename,
     gof_omit    = gof_omit,
     title       = title,
-    output      = "latex",
+    output      = "kableExtra",
+    format      = "latex",
     escape      = FALSE
   )
 
@@ -434,6 +505,9 @@ make_latex_table <- function(models, vcov_list, coef_rename, gof_omit,
     )
 
   tab_text <- as.character(tab)
+  tab_text <- strip_stray_nbsp(tab_text)
+  tab_text <- add_gof_rule(tab_text)
+  tab_text <- split_two_line_coef_labels(tab_text)
   tab_text <- add_coef_row_spacing(tab_text)
   tab_text <- rename_gof_labels(tab_text)
   tab_text <- add_column_numbers(tab_text, n_models)
@@ -465,6 +539,12 @@ compile_latex_table_pdf <- function(tex_file) {
     "\\usepackage{siunitx}",
     "\\usepackage[normalem]{ulem}",
     "\\usepackage{adjustbox}",
+    # modelsummary/kableExtra emit negative numbers with a proper Unicode
+    # minus sign (U+2212, "−"), not an ASCII hyphen. Computer Modern has no
+    # text-mode glyph for that codepoint, so pdfLaTeX errors on it unless we
+    # explicitly map it to LaTeX's own math minus.
+    "\\usepackage{newunicodechar}",
+    "\\newunicodechar{\u2212}{\\ensuremath{-}}",
     "\\pagestyle{empty}",
     "\\begin{document}",
     paste0("\\input{", normalizePath(tex_file, mustWork = TRUE), "}"),
@@ -501,13 +581,17 @@ make_latex_table(
   ),
   coef_rename = c(
     "dhw"                       = "DHW",
-    "dhw:abs_lat"               = "\\shortstack[l]{DHW × \\\\ |Latitude|}",
-    "dhw:Turbidity"             = "\\shortstack[l]{DHW × \\\\ Turbidity}",
-    "dhw:Depth_m"               = "\\shortstack[l]{DHW × \\\\ Depth}",
-    "dhw:DHW_1985.2005_std"     = "\\shortstack[l]{DHW × \\\\ DHW Anomaly}",
-    "dhw:hotspot_1985.2005_std" = "\\shortstack[l]{DHW × \\\\ SST Anomaly Variability}",
-    "dhw:hotspot_warming"       = "\\shortstack[l]{DHW × \\\\ SST Anomaly Warming}",
-    "dhw:in_mpaTRUE"            = "\\shortstack[l]{DHW × \\\\ Marine Protected Area}"
+    # \shortstack vertically CENTERS itself on the row's baseline, so the
+    # coefficient (which sits on that baseline) ends up between the two
+    # stacked lines rather than in line with the first one. \parbox[t]
+    # top-aligns instead, so "DHW ×" lands on the same line as the estimate.
+    "dhw:abs_lat"               = "\\parbox[t]{5cm}{\\raggedright DHW × \\\\ |Latitude|}",
+    "dhw:Turbidity"             = "\\parbox[t]{5cm}{\\raggedright DHW × \\\\ Turbidity}",
+    "dhw:Depth_m"               = "\\parbox[t]{5cm}{\\raggedright DHW × \\\\ Depth}",
+    "dhw:DHW_1985.2005_std"     = "\\parbox[t]{5cm}{\\raggedright DHW × \\\\ DHW Anomaly}",
+    "dhw:hotspot_1985.2005_std" = "\\parbox[t]{5cm}{\\raggedright DHW × \\\\ SST Anomaly Variability}",
+    "dhw:hotspot_warming"       = "\\parbox[t]{5cm}{\\raggedright DHW × \\\\ SST Anomaly Warming}",
+    "dhw:in_mpaTRUE"            = "\\parbox[t]{5cm}{\\raggedright DHW × \\\\ Marine Protected Area}"
   ),
   gof_omit = "R2 Adj|R2 Within Adj|AIC|RMSE|FE|Std",
   notes = list(),
@@ -519,10 +603,10 @@ make_latex_table(
 #### Lag sensitivity ####
 make_latex_table(
   models = list(
-    "Lead 3" = model_lagminus3, "Lead 2" = model_lagminus2, "Lead 1" = model_lagminus1,
+    "Lag 3" = model_lagminus3, "Lag 2" = model_lagminus2, "Lag 1" = model_lagminus1,
     "No Lag or Lead"  = model_lag0,
-    "Lag 1" = model_lag1, "Lag 2" = model_lag2, "Lag 3" = model_lag3,
-    "Lag 4" = model_lag4, "Lag 5" = model_lag5
+    "Lead 1" = model_lag1, "Lead 2" = model_lag2, "Lead 3" = model_lag3,
+    "Lead 4" = model_lag4, "Lead 5" = model_lag5
   ),
   vcov_list = list(
     model_lagminus3_vcov, model_lagminus2_vcov, model_lagminus1_vcov,
@@ -531,19 +615,19 @@ make_latex_table(
     model_lag4_vcov, model_lag5_vcov
   ),
   coef_rename = c(
-    "dhw_lag.3" = "DHW Lead 3", "dhw_lag.2" = "DHW Lead 2", "dhw_lag.1" = "DHW Lead 1",
+    "dhw_lag.3" = "DHW Lag 3", "dhw_lag.2" = "DHW Lag 2", "dhw_lag.1" = "DHW Lag 1",
     "dhw_lag0"  = "DHW",
-    "dhw_lag1"  = "DHW Lag 1", "dhw_lag2"  = "DHW Lag 2", "dhw_lag3"  = "DHW Lag 3",
-    "dhw_lag4"  = "DHW Lag 4", "dhw_lag5"  = "DHW Lag 5",
-    "dhw_lag.3:abs_lat" = "DHW Lead 3 × |Latitude|",
-    "dhw_lag.2:abs_lat" = "DHW Lead 2 × |Latitude|",
-    "dhw_lag.1:abs_lat" = "DHW Lead 1 × |Latitude|",
+    "dhw_lag1"  = "DHW Lead 1", "dhw_lag2"  = "DHW Lead 2", "dhw_lag3"  = "DHW Lead 3",
+    "dhw_lag4"  = "DHW Lead 4", "dhw_lag5"  = "DHW Lead 5",
+    "dhw_lag.3:abs_lat" = "DHW Lag 3 × |Latitude|",
+    "dhw_lag.2:abs_lat" = "DHW Lag 2 × |Latitude|",
+    "dhw_lag.1:abs_lat" = "DHW Lag 1 × |Latitude|",
     "dhw_lag0:abs_lat"  = "DHW × |Latitude|",
-    "dhw_lag1:abs_lat"  = "DHW Lag 1 × |Latitude|",
-    "dhw_lag2:abs_lat"  = "DHW Lag 2 × |Latitude|",
-    "dhw_lag3:abs_lat"  = "DHW Lag 3 × |Latitude|",
-    "dhw_lag4:abs_lat"  = "DHW Lag 4 × |Latitude|",
-    "dhw_lag5:abs_lat"  = "DHW Lag 5 × |Latitude|"
+    "dhw_lag1:abs_lat"  = "DHW Lead 1 × |Latitude|",
+    "dhw_lag2:abs_lat"  = "DHW Lead 2 × |Latitude|",
+    "dhw_lag3:abs_lat"  = "DHW Lead 3 × |Latitude|",
+    "dhw_lag4:abs_lat"  = "DHW Lead 4 × |Latitude|",
+    "dhw_lag5:abs_lat"  = "DHW Lead 5 × |Latitude|"
   ),
   gof_omit = "R2 Adj|R2 Within Adj|AIC|RMSE|FE|Std",
   notes = list(),
@@ -552,6 +636,7 @@ make_latex_table(
 )
 
 #### Polynomial sensitivity ####
+
 make_latex_table(
   models = list(
     "Linear with Latitude Interaction"        = model_linear_lat,
@@ -582,7 +667,6 @@ make_latex_table(
   title = "",
   file  = "table_polynomial_sensitivity.tex"
 )
-
 
 
 
@@ -633,6 +717,7 @@ make_latex_table(
 
 
 
+
 #### seasonality #### 
 #### Model with seasonality FE ####
 model_linear_lat_season <- feols(
@@ -670,8 +755,6 @@ make_latex_table(
   title = "",
   file  = "table_seasonality_sensitivity.tex"
 )
-
-
 
 
 
@@ -732,595 +815,12 @@ make_latex_table(
 
 
 
-# #### load libraries ####
-# library(dplyr)
-# library(fixest)
-# library(ggplot2)
-# library(tidyr)
-# library(patchwork)
-# library(plotly)
-# library(sf)
-# library(glmmTMB)
-# library(modelsummary)
-# library(flextable)
-# library(officer)
 
 
-# #### load datasets ####
-# All_Bleaching_Events_Data_AllDHW <- read.csv("path/to/Coracle/Datasets/Final_Panel_Data_allDHW_01July.csv")
-# All_Bleaching_Events_Data_AllDHW$Proportion_Bleached <- All_Bleaching_Events_Data_AllDHW$Percent_Bleached / 100
-# All_Bleaching_Events_Data_AllDHW$abs_lat             <- abs(All_Bleaching_Events_Data_AllDHW$Latitude_Degrees)
-# All_Bleaching_Events_Data_AllDHW$mass_bleaching      <- ifelse(All_Bleaching_Events_Data_AllDHW$Percent_Bleached >= 30, 1, 0)
-# All_Bleaching_Events_Data_AllDHW <- All_Bleaching_Events_Data_AllDHW %>%
-#   mutate(
-#     Ecoregion_Month = interaction(Ecoregion_Name, Date_Month, drop = TRUE)
-#   )
 
-# All_Bleaching_Events_Data_AllDHW_Max <- read.csv("path/to/data/Final_Combined_Data_all_levels_01July2026_extravars.csv")
-# All_Bleaching_Events_Data_AllDHW_Max <- left_join(All_Bleaching_Events_Data_AllDHW, All_Bleaching_Events_Data_AllDHW_Max[, c(1:8, 17:34)], by = c("Site_ID", "Latitude_Degrees", "Longitude_Degrees", "Date_Year", "Date_Month", "Date_Day", "Ecoregion_Name", "Percent_Bleached"))
 
 
-# #### different model types ####
-# model_linear <- feols(
-#   Percent_Bleached ~ dhw | Site_ID + Date_Year + Ecoregion_Month, 
-#   cluster = ~Ecoregion_Name, 
-#   data = All_Bleaching_Events_Data_AllDHW)
 
-# model_linear_turbidity <- feols(
-#   Percent_Bleached ~ dhw + dhw:Turbidity | Site_ID + Date_Year + Ecoregion_Month,
-#   cluster = ~Ecoregion_Name,
-#   data = All_Bleaching_Events_Data_AllDHW
-# )
 
-# model_linear_depth <- feols(
-#   Percent_Bleached ~ dhw + dhw:Depth_m | Site_ID + Date_Year + Ecoregion_Month,
-#   cluster = ~Ecoregion_Name,
-#   data = All_Bleaching_Events_Data_AllDHW
-# )
 
-# model_linear_dhw_std <- feols(
-#   Percent_Bleached ~ dhw + dhw:DHW_1985.2005_std | Site_ID + Date_Year + Ecoregion_Month,
-#   cluster = ~Ecoregion_Name,
-#   data = All_Bleaching_Events_Data_AllDHW_Max
-# )
 
-# model_linear_hotspot_std <- feols(
-#   Percent_Bleached ~ dhw + dhw:hotspot_1985.2005_std | Site_ID + Date_Year + Ecoregion_Month,
-#   cluster = ~Ecoregion_Name,
-#   data = All_Bleaching_Events_Data_AllDHW_Max
-# )
-
-# model_linear_hotspot_warming <- feols(
-#   Percent_Bleached ~ dhw + dhw:hotspot_warming | Site_ID + Date_Year + Ecoregion_Month,
-#   cluster = ~Ecoregion_Name,
-#   data = All_Bleaching_Events_Data_AllDHW_Max
-# )
-
-# model_linear_lat_depth <- feols(
-#   Percent_Bleached ~ dhw + dhw:abs_lat + dhw:Depth_m | Site_ID + Date_Year + Ecoregion_Month,
-#   cluster = ~Ecoregion_Name,
-#   data = All_Bleaching_Events_Data_AllDHW_Max
-# )
-
-# model_linear_lat_hotspot <- feols(
-#   Percent_Bleached ~ dhw + dhw:abs_lat + dhw:hotspot_1985.2005_std | Site_ID + Date_Year + Ecoregion_Month,
-#   cluster = ~Ecoregion_Name,
-#   data = All_Bleaching_Events_Data_AllDHW_Max
-# )
-
-# #### Adding MPA interactions to bleaching events data ####
-# # Read all files
-# poly_files <- c(
-#   "path/to/Coracle/Maps_and_Spatial_Data/WDPA_WDOECM_Jan2026_Public_marine_shp/WDPA_WDOECM_Jan2026_Public_marine_shp_0/WDPA_WDOECM_Jan2026_Public_marine_shp-polygons.shp",
-#   "path/to/Coracle/Maps_and_Spatial_Data/WDPA_WDOECM_Jan2026_Public_marine_shp/WDPA_WDOECM_Jan2026_Public_marine_shp_1/WDPA_WDOECM_Jan2026_Public_marine_shp-polygons.shp",
-#   "path/to/Coracle/Maps_and_Spatial_Data/WDPA_WDOECM_Jan2026_Public_marine_shp/WDPA_WDOECM_Jan2026_Public_marine_shp_2/WDPA_WDOECM_Jan2026_Public_marine_shp-polygons.shp"
-# )
-
-# point_files <- c(
-#   "path/to/Coracle/Maps_and_Spatial_Data/WDPA_WDOECM_Jan2026_Public_marine_shp/WDPA_WDOECM_Jan2026_Public_marine_shp_0/WDPA_WDOECM_Jan2026_Public_marine_shp-points.shp",
-#   "path/to/Coracle/Maps_and_Spatial_Data/WDPA_WDOECM_Jan2026_Public_marine_shp/WDPA_WDOECM_Jan2026_Public_marine_shp_1/WDPA_WDOECM_Jan2026_Public_marine_shp-points.shp",
-#   "path/to/Coracle/Maps_and_Spatial_Data/WDPA_WDOECM_Jan2026_Public_marine_shp/WDPA_WDOECM_Jan2026_Public_marine_shp_2/WDPA_WDOECM_Jan2026_Public_marine_shp-points.shp"
-# )
-
-# # Merge polygons
-# poly_list <- lapply(poly_files, st_read)
-# merged_poly <- do.call(rbind, poly_list)
-
-# # Merge points
-# point_list <- lapply(point_files, st_read)
-# merged_points <- do.call(rbind, point_list)
-
-# # Get all unique column names
-# all_cols <- union(names(merged_poly), names(merged_points))
-
-# # Add missing columns to each dataset
-# for (col in all_cols) {
-#   if (!col %in% names(merged_poly)) {
-#     merged_poly[[col]] <- NA
-#   }
-#   if (!col %in% names(merged_points)) {
-#     merged_points[[col]] <- NA
-#   }
-# }
-
-# # Reorder columns to match
-# merged_poly <- merged_poly[, all_cols]
-# merged_points <- merged_points[, all_cols]
-
-# # Now combine
-# all_marine <- rbind(merged_poly, merged_points)
-
-# # Convert your data to sf object (points)
-# merged_sf <- st_as_sf(All_Bleaching_Events_Data_AllDHW, 
-#                       coords = c("Longitude_Degrees", "Latitude_Degrees"),  # Adjust column names
-#                       crs = 4326)  # WGS84
-
-# # Fix invalid geometries in MPA data
-# all_marine <- st_make_valid(all_marine)
-
-# # Spatial join
-# sf_use_s2(FALSE)
-# bleaching_with_mpa <- st_join(merged_sf, all_marine["SITE_ID"], left = TRUE)
-# sf_use_s2(TRUE)
-
-# # Add binary MPA indicator
-# bleaching_with_mpa$in_mpa <- !is.na(bleaching_with_mpa$SITE_ID)
-
-# # Drop geometry and deduplicate
-# # st_join can create duplicates if a point falls in multiple MPAs
-# All_Bleaching_Events_Data_AllDHW_MPA <- bleaching_with_mpa %>%
-#   st_drop_geometry() %>%
-#   group_by(across(-c(SITE_ID, in_mpa))) %>%
-#   summarise(in_mpa = any(in_mpa), .groups = "drop")
-
-# #### Run MPA model ####
-# model_linear_mpa <- feols(
-#   Percent_Bleached ~ dhw + dhw:in_mpa | Site_ID + Date_Year + Ecoregion_Month,
-#   cluster = ~Ecoregion_Name,
-#   data    = All_Bleaching_Events_Data_AllDHW_MPA
-# )
-
-
-# #### cluster sensitivity test ####
-# model_linear_nocluster <- feols(
-#   Percent_Bleached ~ dhw | Site_ID + Date_Year + Ecoregion_Month, 
-#   data = All_Bleaching_Events_Data_AllDHW)
-
-# model_linear_ecoregion <- feols(
-#   Percent_Bleached ~ dhw | Site_ID + Date_Year + Ecoregion_Month, 
-#   cluster = ~Ecoregion_Name, 
-#   data = All_Bleaching_Events_Data_AllDHW)
-
-# model_linear_site <- feols(
-#   Percent_Bleached ~ dhw | Site_ID + Date_Year + Ecoregion_Month, 
-#   cluster = ~Site_ID, 
-#   data = All_Bleaching_Events_Data_AllDHW)
-
-
-# #### lag sensitivity test ####
-# model_lagminus3 <- feols(Percent_Bleached ~ dhw_lag.3 | Site_ID + Date_Year + Ecoregion_Month, cluster = ~Ecoregion_Name, 
-#                          data = All_Bleaching_Events_Data_AllDHW)
-# model_lagminus2 <- feols(Percent_Bleached ~ dhw_lag.2 | Site_ID + Date_Year + Ecoregion_Month, cluster = ~Ecoregion_Name, 
-#                          data = All_Bleaching_Events_Data_AllDHW)
-# model_lagminus1 <- feols(Percent_Bleached ~ dhw_lag.1 | Site_ID + Date_Year + Ecoregion_Month, cluster = ~Ecoregion_Name, 
-#                          data = All_Bleaching_Events_Data_AllDHW)
-# model_lag0 <- feols(Percent_Bleached ~ dhw_lag0 | Site_ID + Date_Year + Ecoregion_Month, cluster = ~Ecoregion_Name, 
-#                     data = All_Bleaching_Events_Data_AllDHW)
-# model_lag1 <- feols(Percent_Bleached ~ dhw_lag1 | Site_ID + Date_Year + Ecoregion_Month, cluster = ~Ecoregion_Name, 
-#                     data = All_Bleaching_Events_Data_AllDHW)
-# model_lag2 <- feols(Percent_Bleached ~ dhw_lag2 | Site_ID + Date_Year + Ecoregion_Month, cluster = ~Ecoregion_Name, 
-#                     data = All_Bleaching_Events_Data_AllDHW)
-# model_lag3 <- feols(Percent_Bleached ~ dhw_lag3 | Site_ID + Date_Year + Ecoregion_Month, cluster = ~Ecoregion_Name, 
-#                     data = All_Bleaching_Events_Data_AllDHW)
-# model_lag4 <- feols(Percent_Bleached ~ dhw_lag4 | Site_ID + Date_Year + Ecoregion_Month, cluster = ~Ecoregion_Name, 
-#                     data = All_Bleaching_Events_Data_AllDHW)
-# model_lag5 <- feols(Percent_Bleached ~ dhw_lag5 | Site_ID + Date_Year + Ecoregion_Month, cluster = ~Ecoregion_Name, 
-#                     data = All_Bleaching_Events_Data_AllDHW)
-
-
-
-# #### Quadratic DHW models ####
-# model_quadratic <- feols(
-#   Percent_Bleached ~ dhw + I(dhw^2) | Site_ID + Date_Year + Ecoregion_Month,
-#   cluster = ~Ecoregion_Name,
-#   data    = All_Bleaching_Events_Data_AllDHW
-# )
-
-# model_quadratic_lat <- feols(
-#   Percent_Bleached ~ dhw + I(dhw^2) + dhw:abs_lat + I(dhw^2):abs_lat | Site_ID + Date_Year + Ecoregion_Month,
-#   cluster = ~Ecoregion_Name,
-#   data    = All_Bleaching_Events_Data_AllDHW
-# )
-
-# #### Cubic DHW models ####
-# model_cubic <- feols(
-#   Percent_Bleached ~ dhw + I(dhw^2) + I(dhw^3) | Site_ID + Date_Year + Ecoregion_Month,
-#   cluster = ~Ecoregion_Name,
-#   data    = All_Bleaching_Events_Data_AllDHW
-# )
-
-# model_cubic_lat <- feols(
-#   Percent_Bleached ~ dhw + I(dhw^2) + I(dhw^3) +
-#     dhw:abs_lat + I(dhw^2):abs_lat + I(dhw^3):abs_lat | Site_ID + Date_Year + Ecoregion_Month,
-#   cluster = ~Ecoregion_Name,
-#   data    = All_Bleaching_Events_Data_AllDHW
-# )
-
-
-
-
-
-
-# ################## conley errors ################
-# #### Compute Conley (200km, spherical) vcov for each model ####
-# conley_vcov <- function(model) {
-#   vcov_conley(model,
-#               lat      = "Latitude_Degrees",
-#               lon      = "Longitude_Degrees",
-#               cutoff   = 200,
-#               distance = "spherical")
-# }
-
-# #### Different model types ####
-# model_linear_vcov <- conley_vcov(model_linear)
-# model_linear_lat_vcov <- conley_vcov(model_linear_lat)
-# model_linear_turbidity_vcov <- conley_vcov(model_linear_turbidity)
-# model_linear_depth_vcov <- conley_vcov(model_linear_depth)
-# model_linear_dhw_std_vcov <- conley_vcov(model_linear_dhw_std)
-# model_linear_hotspot_std_vcov <- conley_vcov(model_linear_hotspot_std)
-# model_linear_hotspot_warming_vcov <- conley_vcov(model_linear_hotspot_warming)
-# model_linear_lat_depth_vcov <- conley_vcov(model_linear_lat_depth)
-# model_linear_lat_hotspot_vcov <- conley_vcov(model_linear_lat_hotspot)
-
-# All_Bleaching_Events_Data_AllDHW_MPA <- All_Bleaching_Events_Data_AllDHW_MPA %>%
-#   left_join(
-#     All_Bleaching_Events_Data_AllDHW %>% 
-#       select(Site_ID, Date_Year, Latitude_Degrees, Longitude_Degrees),
-#     by = c("Site_ID", "Date_Year")
-#   )
-# model_linear_mpa_vcov <- conley_vcov(model_linear_mpa)
-
-
-# #### Lag models ####
-# model_lagminus3_vcov <- conley_vcov(model_lagminus3)
-# model_lagminus2_vcov <- conley_vcov(model_lagminus2)
-# model_lagminus1_vcov <- conley_vcov(model_lagminus1)
-# model_lag0_vcov <- conley_vcov(model_lag0)
-# model_lag1_vcov <- conley_vcov(model_lag1)
-# model_lag2_vcov <- conley_vcov(model_lag2)
-# model_lag3_vcov <- conley_vcov(model_lag3)
-# model_lag4_vcov <- conley_vcov(model_lag4)
-# model_lag5_vcov <- conley_vcov(model_lag5)
-
-
-# #### Quadratic models ####
-# model_quadratic_vcov <- conley_vcov(model_quadratic)
-# model_quadratic_lat_vcov <- conley_vcov(model_quadratic_lat)
-
-# #### Cubic models ####
-# model_cubic_vcov <- conley_vcov(model_cubic)
-# model_cubic_lat_vcov <- conley_vcov(model_cubic_lat)
-
-
-
-# #### Custom styling function ####
-# nature_table_style <- function(ft) {
-#   ft %>%
-#     font(fontname = "Arial", part = "all") %>%
-#     fontsize(size = 7, part = "all") %>%
-#     align(align = "center", part = "header") %>%
-#     align(j = 1, align = "left", part = "body") %>%
-#     align(j = 2:ncol_keys(ft), align = "center", part = "body") %>%
-#     bold(part = "header") %>%
-#     border_remove() %>%
-#     hline_top(border = fp_border(width = 1.5), part = "all") %>%
-#     hline_bottom(border = fp_border(width = 1.5), part = "all") %>%
-#     hline(i = 1, border = fp_border(width = 1), part = "header") %>%
-#     autofit() %>%
-#     width(width = 1.2, unit = "in")
-# }
-
-# #### Interaction models ####
-# modelsummary(
-#   list(
-#     "Latitude"      = model_linear_lat,
-#     "Turbidity"     = model_linear_turbidity,
-#     "Depth"         = model_linear_depth,
-#     "DHW var."      = model_linear_dhw_std,
-#     "SST var."  = model_linear_hotspot_std,
-#     "SST warm." = model_linear_hotspot_warming,
-#     #"Lat+Depth"     = model_linear_lat_depth,
-#     "Lat+SST var."   = model_linear_lat_hotspot,
-#     "MPA"           = model_linear_mpa
-#   ),
-#   vcov = list(      # Pass vcov objects separately here
-#     model_linear_lat_vcov,
-#     model_linear_turbidity_vcov,
-#     model_linear_depth_vcov,
-#     model_linear_dhw_std_vcov,
-#     model_linear_hotspot_std_vcov,
-#     model_linear_hotspot_warming_vcov,
-#     #model_linear_lat_depth_vcov,
-#     model_linear_lat_hotspot_vcov,
-#     model_linear_mpa_vcov
-#   ),
-#   stars     = c('*' = 0.05, '**' = 0.01),
-#   fmt       = 2,
-#   statistic = "({std.error})",
-#   coef_omit = "Intercept",
-#   coef_rename = c(
-#     "dhw"                       = "DHW",
-#     "dhw:abs_lat"               = "DHW × Latitude",
-#     "dhw:Turbidity"             = "DHW × Turbidity",
-#     "dhw:Depth_m"               = "DHW × Depth",
-#     "dhw:DHW_1985.2005_std"     = "DHW × DHW var",
-#     "dhw:hotspot_1985.2005_std" = "DHW × SST var",
-#     "dhw:hotspot_warming"       = "DHW × SST warm",
-#     "dhw:in_mpaTRUE"            = "DHW × MPA"
-#   ),
-#   gof_omit  = "R2 Adj|R2 Within Adj|AIC|RMSE|FE|Std",
-#   notes     = list(
-#     "Standard errors in parentheses, using Conley 200km errors.",
-#     "All models include site and year fixed effects."
-#   ),
-#   title  = "Interaction models (DHW with site characteristics)",
-#   output = "flextable"
-# ) %>%
-#   nature_table_style() %>%
-#   save_as_docx(path = "table_interactions_nature.docx")
-
-
-# #### Lag sensitivity ####
-# modelsummary(
-#   list(
-#     "−3" = model_lagminus3, "−2" = model_lagminus2, "−1" = model_lagminus1,
-#     "0"  = model_lag0,
-#     "+1" = model_lag1, "+2" = model_lag2, "+3" = model_lag3,
-#     "+4" = model_lag4, "+5" = model_lag5
-#   ),
-#   vcov = list(
-#     model_lagminus3_vcov, model_lagminus2_vcov, model_lagminus1_vcov,
-#     model_lag0_vcov,
-#     model_lag1_vcov, model_lag2_vcov, model_lag3_vcov,
-#     model_lag4_vcov, model_lag5_vcov
-#   ),
-#   stars     = c('*' = 0.05, '**' = 0.01),
-#   fmt       = 2,
-#   statistic = "({std.error})",
-#   coef_omit = "Intercept",
-#   coef_rename = c(
-#     "dhw_lag.3" = "DHW", "dhw_lag.2" = "DHW", "dhw_lag.1" = "DHW",
-#     "dhw_lag0"  = "DHW",
-#     "dhw_lag1"  = "DHW", "dhw_lag2"  = "DHW", "dhw_lag3"  = "DHW",
-#     "dhw_lag4"  = "DHW", "dhw_lag5"  = "DHW"
-#   ),
-#   gof_omit  = "R2 Adj|R2 Within Adj|AIC|RMSE|FE|Std",
-#   notes     = list(
-#     "Standard errors in parentheses, using Conley 200km errors.",
-#     "All models include site and year fixed effects.",
-#     "Column headers show lag in months relative to bleaching observation."
-#   ),
-#   title  = "Temporal lag sensitivity analysis",
-#   output = "flextable"
-# ) %>%
-#   nature_table_style() %>%
-#   save_as_docx(path = "table_lags_nature.docx")
-
-# #### Polynomial sensitivity ####
-# modelsummary(
-#   list(
-#     "Linear"        = model_linear_lat,
-#     "Quadratic"     = model_quadratic,
-#     "Quadratic+Lat" = model_quadratic_lat,
-#     "Cubic"         = model_cubic,
-#     "Cubic+Lat"     = model_cubic_lat
-#   ),
-#   vcov = list(
-#     model_linear_lat_vcov,
-#     model_quadratic_vcov,
-#     model_quadratic_lat_vcov,
-#     model_cubic_vcov,
-#     model_cubic_lat_vcov
-#   ),
-#   stars     = c('*' = 0.05, '**' = 0.01),
-#   fmt       = 2,
-#   statistic = "({std.error})",
-#   coef_omit = "Intercept",
-#   coef_rename = c(
-#     "dhw"              = "DHW",
-#     "I(dhw^2)"         = "DHW²",
-#     "I(dhw^3)"         = "DHW³",
-#     "dhw:abs_lat"      = "DHW × Lat",
-#     "I(dhw^2):abs_lat" = "DHW² × Lat",
-#     "I(dhw^3):abs_lat" = "DHW³ × Lat"
-#   ),
-#   gof_omit = "R2$|R2 Adj|R2 Within Adj|AIC|RMSE|FE|Std",
-#   notes    = list(
-#     "* p < 0.05, ** p < 0.01",
-#     "Standard errors in parentheses, using Conley 200km errors.",
-#     "All models include site and year fixed effects."
-#   ),
-#   title  = "Polynomial DHW sensitivity analysis",
-#   output = "flextable"
-# ) %>%
-#   nature_table_style() %>%
-#   save_as_docx(path = "table_polynomial_sensitivity.docx")
-
-
-
-
-
-
-# model_linear_nocluster <- feols(
-#   Percent_Bleached ~ dhw | Site_ID + Date_Year + Ecoregion_Month, 
-#   data = All_Bleaching_Events_Data_AllDHW)
-
-# model_linear_ecoregion <- feols(
-#   Percent_Bleached ~ dhw | Site_ID + Date_Year + Ecoregion_Month, 
-#   cluster = ~Ecoregion_Name, 
-#   data = All_Bleaching_Events_Data_AllDHW)
-
-# model_linear_site <- feols(
-#   Percent_Bleached ~ dhw | Site_ID + Date_Year + Ecoregion_Month, 
-#   cluster = ~Site_ID, 
-#   data = All_Bleaching_Events_Data_AllDHW)
-
-# model_linear_nocluster_vcov <- conley_vcov(model_linear_nocluster)
-# model_linear_ecoregion_vcov <- conley_vcov(model_linear_ecoregion)
-# model_linear_site_vcov <- conley_vcov(model_linear_site)
-
-
-# modelsummary(
-#   list(
-#     "Conley 200km"  = model_linear, 
-#     "Ecoregion" = model_linear_ecoregion,
-#     "Site"      = model_linear_site,
-#     "None"      = model_linear_nocluster
-    
-#   ),
-#   vcov = list(
-#     model_linear_vcov,
-#     ~Ecoregion_Name,           # use model's own ecoregion clustering
-#     ~Site_ID,                  # use model's own site clustering
-#     "iid"                      # no clustering
-#   ),
-#   stars     = c('*' = 0.05, '**' = 0.01),
-#   fmt       = 2,
-#   statistic = "({std.error})",
-#   coef_omit = "Intercept",
-#   coef_rename = c("dhw" = "DHW"),
-#   gof_omit  = "R2 Adj|R2 Within Adj|AIC|RMSE|FE|Std",
-#   notes     = list(
-#     "Standard errors in parentheses.",
-#     "All models include site and year fixed effects.",
-#     "Clustering level varies by column as indicated."
-#   ),
-#   title  = "Standard error clustering sensitivity",
-#   output = "flextable"
-# ) %>%
-#   nature_table_style() %>%
-#   save_as_docx(path = "table_clustering_nature.docx")
-
-
-
-
-
-
-# #### seasonality #### 
-# #### Model with seasonality FE ####
-# model_linear_lat_season <- feols(
-#   Percent_Bleached ~ dhw + dhw:abs_lat | Site_ID + Date_Year + Ecoregion_Month,
-#   cluster = ~Ecoregion_Name,
-#   data    = All_Bleaching_Events_Data_AllDHW
-# )
-
-
-# #### Compare to baseline model ####
-# model_linear_lat <- feols(
-#   Percent_Bleached ~ dhw + dhw:abs_lat | Site_ID + Date_Year,
-#   cluster = ~Ecoregion_Name,
-#   data    = All_Bleaching_Events_Data_AllDHW
-# )
-
-
-# model_linear_lat_vcov        <- conley_vcov(model_linear_lat)
-# model_linear_lat_season_vcov <- conley_vcov(model_linear_lat_season)
-
-# #### Comparison table ####
-# modelsummary(
-#   list(
-#     "Baseline (Site + Year FE)"            = model_linear_lat,
-#     "+ Seasonality (Ecoregion×Month FE)"   = model_linear_lat_season
-#   ),
-#   vcov = list(
-#     model_linear_lat_vcov,
-#     model_linear_lat_season_vcov
-#   ),
-#   stars     = c('*' = 0.05, '**' = 0.01),
-#   fmt       = 2,
-#   statistic = "({std.error})",
-#   coef_omit = "Intercept",
-#   coef_rename = c(
-#     "dhw"         = "DHW",
-#     "dhw:abs_lat" = "DHW × |Latitude|"
-#   ),
-#   gof_omit  = "R2 Adj|R2 Within Adj|AIC|RMSE|FE|Std",
-#   notes     = list(
-#     "Standard errors in parentheses, Conley (200km) spatial correction.",
-#     "Both models include Site_ID and Date_Year fixed effects.",
-#     "Ecoregion×Month FE absorbs seasonal differences in bleaching timing between hemispheres."
-#   ),
-#   title  = "Sensitivity to seasonality (ecoregion-month fixed effects)",
-#   output = "flextable"
-# ) %>%
-#   nature_table_style() %>%
-#   save_as_docx(path = "table_seasonality_sensitivity.docx")
-
-
-
-
-
-
-
-
-
-# #### DHW specification sensitivity (DHW vs DHW_adj) ####
-
-# All_Bleaching_Events_Data_AllDHW_test <- All_Bleaching_Events_Data_AllDHW
-# All_Bleaching_Events_Data_AllDHW_test <- left_join(All_Bleaching_Events_Data_AllDHW_test, DF[, c(1, 2, 3, 4, 5, 6, 18)])
-# #### Fit base + adjusted DHW models (Conley SEs computed post-estimation) ####
-# model_linear_dhwspec <- feols(
-#   Percent_Bleached ~ dhw | Site_ID + Date_Year + Ecoregion_Month,
-#   data = All_Bleaching_Events_Data_AllDHW_Max)
-# model_linear_dhwspec_vcov <- conley_vcov(model_linear_dhwspec)
-
-# model_linear_lat_dhwspec <- feols(
-#   Percent_Bleached ~ dhw + dhw:abs_lat | Site_ID + Date_Year + Ecoregion_Month,
-#   data = All_Bleaching_Events_Data_AllDHW_Max)
-# model_linear_lat_dhwspec_vcov <- conley_vcov(model_linear_lat_dhwspec)
-
-# model_linear_adj <- feols(
-#   Percent_Bleached ~ DHW_adj | Site_ID + Date_Year + Ecoregion_Month,
-#   data = All_Bleaching_Events_Data_AllDHW_Max)
-# model_linear_adj_vcov <- conley_vcov(model_linear_adj)
-
-# model_linear_adj_lat <- feols(
-#   Percent_Bleached ~ DHW_adj + DHW_adj:abs_lat | Site_ID + Date_Year + Ecoregion_Month,
-#   data = All_Bleaching_Events_Data_AllDHW_Max)
-# model_linear_adj_lat_vcov <- conley_vcov(model_linear_adj_lat)
-
-# #### Table: DHW specification sensitivity ####
-# modelsummary(
-#   list(
-#     "DHW"               = model_linear_dhwspec,
-#     "DHW + Lat."        = model_linear_lat_dhwspec,
-#     "DHW (adj.)"        = model_linear_adj,
-#     "DHW (adj.) + Lat." = model_linear_adj_lat
-#   ),
-#   vcov = list(
-#     model_linear_dhwspec_vcov,
-#     model_linear_lat_dhwspec_vcov,
-#     model_linear_adj_vcov,
-#     model_linear_adj_lat_vcov
-#   ),
-#   stars     = c('*' = 0.05, '**' = 0.01),
-#   fmt       = 2,
-#   statistic = "({std.error})",
-#   coef_omit = "Intercept",
-#   coef_rename = c(
-#     "DHW"             = "DHW",
-#     "DHW_adj"         = "DHW (adjusted)",
-#     "DHW:abs_lat"     = "DHW × |Latitude|",
-#     "DHW_adj:abs_lat" = "DHW (adj.) × |Latitude|"
-#   ),
-#   gof_omit  = "R2 Adj|R2 Within Adj|AIC|RMSE|FE|Std",
-#   notes     = list(
-#     "Standard errors in parentheses, Conley (200km) spatial correction.",
-#     "All models include site and year fixed effects.",
-#     "DHW (adjusted) uses the thermal anomaly adjustment from Ainsworth et al. (2016)."
-#   ),
-#   title  = "Sensitivity to DHW specification",
-#   output = "flextable"
-# ) %>%
-#   nature_table_style() %>%
-#   save_as_docx(path = "table_sensitivity_dhw_spec.docx")
