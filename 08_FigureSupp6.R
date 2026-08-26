@@ -142,28 +142,22 @@ country_labels <- c(
   "EU27UK" = "EU27+UK", "USA" = "USA", "Australia" = "Australia"
 )
 
-# company_labels <- c(
-#   "natural" = nat_label, "Saudi Aramco" = "Saudi Aramco", "ExxonMobil" = "ExxonMobil",
-#   "Chevron" = "Chevron", "Holcim Group" = "Holcim Group", "All_US" = "All US",
-#   "topten" = "Top 10", "all" = "All"
-# )
-
-
 company_labels <- c(
   "natural" = nat_label, "Saudi Aramco" = "Saudi Aramco", "ExxonMobil" = "ExxonMobil",
-  "Chevron" = "Chevron", "topten" = "Top 10", "all" = "All", "Gazprom" = "Gazprom", 
+  "Chevron" = "Chevron", "topten" = "Top 10 Carbon Major", "all" = "All Carbon Majors", "Gazprom" = "Gazprom", 
   "National Iranian Oil Company" = "National Iranian\nOil Company", 
   "BP" = "BP"
 )
 
 
 #### PLOTTING FUNCTIONS ####
-bar_theme <- theme_classic(base_size = 14, base_family = "Arial") +
+bar_theme <- theme_classic(base_size = 7, base_family = "Arial") +
   theme(
-    axis.text.x        = element_text(angle = 45, hjust = 1, size = 12),
-    axis.title.y       = element_text(size = 11),
-    plot.title         = element_text(size = 14, hjust = 0.5),
-    plot.tag           = element_text(size = 14, face = "bold"),
+    axis.text.x        = element_text(angle = 45, hjust = 1, size = 6),
+    axis.text.y        = element_text(size = 6),
+    axis.title.y       = element_text(size = 7),
+    plot.title         = element_text(size = 7, hjust = 0.5),
+    plot.tag           = element_text(size = 8, face = "bold"),
     panel.grid.major.y = element_line(colour = "grey90", linewidth = 0.3),
     legend.position    = "none"
   )
@@ -198,7 +192,7 @@ make_bar <- function(df, tag, title, y_limits = c(0, 100)) {
     coord_cartesian(ylim = y_limits) +
     labs(#y = "Percentage of site-level bleaching events (1985-2024)", 
       #y = "Percentage of site-level bleaching events (2024)", 
-      y = "Percentage of site-level bleaching events", 
+      y = "Percentage of bleaching events greater than 10%", 
       x = NULL, tag = tag, title = title) +
     bar_theme
   
@@ -210,14 +204,15 @@ make_bar <- function(df, tag, title, y_limits = c(0, 100)) {
 # Adjust the data object name if different in your environment
 All_Bleaching_Events_Data_AllDHW <- read.csv("path/to/Coracle/Datasets/Final_Panel_Data_allDHW_01July.csv")
 
+
 panel_site_ids <- All_Bleaching_Events_Data_AllDHW %>%
   group_by(Site_ID) %>% filter(n() > 1) %>% pull(Site_ID) %>% unique()
 
 #### ── RUN 4 VERSIONS (10% threshold) ─────────────────────────────────── ####
-step2_all        <- get_batch_counts_corrected_v2(batch_dir, threshold = 20)
-step2_panel      <- get_batch_counts_corrected_v2(batch_dir, threshold = 20, site_filter = panel_site_ids)
-step2_1998       <- get_batch_counts_corrected_v2(batch_dir, threshold = 20, year_from = 1998)
-step2_panel_1998 <- get_batch_counts_corrected_v2(batch_dir, threshold = 20, site_filter = panel_site_ids, year_from = 1998)
+step2_all        <- get_batch_counts_corrected_v2(batch_dir, threshold = 10)
+step2_panel      <- get_batch_counts_corrected_v2(batch_dir, threshold = 10, site_filter = panel_site_ids)
+step2_1998       <- get_batch_counts_corrected_v2(batch_dir, threshold = 10, year_from = 1998)
+step2_panel_1998 <- get_batch_counts_corrected_v2(batch_dir, threshold = 10, site_filter = panel_site_ids, year_from = 1998)
 
 #### ── ATTRIBUTION DATAFRAMES ──────────────────────────────────────────── ####
 # Countries
@@ -233,10 +228,10 @@ tot_company_1998       <- get_total_attribution_df(step2_1998,       company_lab
 tot_company_panel_1998 <- get_total_attribution_df(step2_panel_1998, company_labels)
 
 #### ── COUNTRY FIGURE (2×2) ────────────────────────────────────────────── ####
-p_country_all        <- make_bar(tot_country_all,        "a", "Country contributions to bleaching (>20%), all sites 1985–2024")
-p_country_panel      <- make_bar(tot_country_panel,      "b", "Country contributions to bleaching (>20%), panel sites 1985–2024")
-p_country_1998       <- make_bar(tot_country_1998,       "c", "Country contributions to bleaching (>20%), all sites 1998–2024")
-p_country_panel_1998 <- make_bar(tot_country_panel_1998, "d", "Country contributions to bleaching (>20%), panel sites 1998–2024")
+p_country_all        <- make_bar(tot_country_all,        "a", "Country contributions to bleaching, all sites 1985–2024")
+p_country_panel      <- make_bar(tot_country_panel,      "b", "Country contributions to bleaching, panel sites 1985–2024")
+p_country_1998       <- make_bar(tot_country_1998,       "c", "Country contributions to bleaching, all sites 1998–2024")
+p_country_panel_1998 <- make_bar(tot_country_panel_1998, "d", "Country contributions to bleaching, panel sites 1998–2024")
 
 fig_country <- (p_country_all | p_country_panel) /
   (p_country_1998 | p_country_panel_1998)
@@ -253,7 +248,7 @@ fig_company <- (p_company_all | p_company_panel) /
 fig_company
 
 #### ── SAVE ────────────────────────────────────────────────────────────── ####
-ggsave("fig_country_10pct_sensitivity.pdf", fig_country,
-       width = 250, height = 200, units = "mm", dpi = 300)
-ggsave("fig_company_10pct_sensitivity.pdf", fig_company,
-       width = 250, height = 200, units = "mm", dpi = 300)
+ggsave("fig_country_10pct_sensitivity.png", fig_country,
+       width = 183, height = 150, units = "mm", dpi = 600)
+ggsave("fig_company_10pct_sensitivity.png", fig_company,
+       width = 183, height = 150, units = "mm", dpi = 600)
