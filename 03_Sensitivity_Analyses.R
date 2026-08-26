@@ -33,7 +33,7 @@ library(kableExtra)
 
 
 #### load datasets ####
-All_Bleaching_Events_Data_AllDHW <- read.csv("/Users/pujapande/Library/CloudStorage/Dropbox/Coracle/Datasets - 01 July 2026/Final_Panel_Data_allDHW_01July.csv")
+All_Bleaching_Events_Data_AllDHW <- read.csv("path/to/Coracle/Datasets - 01 July 2026/Final_Panel_Data_allDHW_01July.csv")
 All_Bleaching_Events_Data_AllDHW$Proportion_Bleached <- All_Bleaching_Events_Data_AllDHW$Percent_Bleached / 100
 All_Bleaching_Events_Data_AllDHW$abs_lat             <- abs(All_Bleaching_Events_Data_AllDHW$Latitude_Degrees)
 All_Bleaching_Events_Data_AllDHW$mass_bleaching      <- ifelse(All_Bleaching_Events_Data_AllDHW$Percent_Bleached >= 30, 1, 0)
@@ -42,7 +42,7 @@ All_Bleaching_Events_Data_AllDHW <- All_Bleaching_Events_Data_AllDHW %>%
     Ecoregion_Month = interaction(Ecoregion_Name, Date_Month, drop = TRUE)
   )
 
-All_Bleaching_Events_Data_AllDHW_Max <- read.csv("/Users/pujapande/Downloads/Final_Combined_Data_all_levels_01July2026_extravars.csv")
+All_Bleaching_Events_Data_AllDHW_Max <- read.csv("path/to/Final_Combined_Data_all_levels_01July2026_extravars.csv")
 All_Bleaching_Events_Data_AllDHW_Max <- left_join(All_Bleaching_Events_Data_AllDHW, All_Bleaching_Events_Data_AllDHW_Max[, c(1:8, 17:34)], by = c("Site_ID", "Latitude_Degrees", "Longitude_Degrees", "Date_Year", "Date_Month", "Date_Day", "Ecoregion_Name", "Percent_Bleached"))
 
 
