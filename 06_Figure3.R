@@ -155,28 +155,22 @@ country_labels <- c(
   "EU27UK" = "EU27+UK", "USA" = "USA", "Australia" = "Australia"
 )
 
-# company_labels <- c(
-#   "natural" = nat_label, "Saudi Aramco" = "Saudi Aramco", "ExxonMobil" = "ExxonMobil",
-#   "Chevron" = "Chevron", "Holcim Group" = "Holcim Group", "All_US" = "All US",
-#   "topten" = "Top 10", "all" = "All"
-# )
-
 
 company_labels <- c(
   "natural" = nat_label, "Saudi Aramco" = "Saudi Aramco", "ExxonMobil" = "ExxonMobil",
-  "Chevron" = "Chevron", "topten" = "Top 10", "all" = "All", "Gazprom" = "Gazprom", 
+  "Chevron" = "Chevron", "topten" = "Top 10 carbon majors", "all" = "All carbon majors", "Gazprom" = "Gazprom", 
   "National Iranian Oil Company" = "National Iranian\nOil Company", 
   "BP" = "BP"
 )
 
-
 #### PLOTTING FUNCTIONS ####
-bar_theme <- theme_classic(base_size = 14, base_family = "Arial") +
+bar_theme <- theme_classic(base_size = 7, base_family = "Arial") +
   theme(
-    axis.text.x        = element_text(angle = 45, hjust = 1, size = 12),
-    axis.title.y       = element_text(size = 11),
-    plot.title         = element_text(size = 14, hjust = 0.5),
-    plot.tag           = element_text(size = 14, face = "bold"),
+    axis.text.x        = element_text(angle = 45, hjust = 1, size = 6),
+    axis.text.y        = element_text(size = 6),
+    axis.title.y       = element_text(size = 7),
+    plot.title         = element_text(size = 7, hjust = 0.5),
+    plot.tag           = element_text(size = 8, face = "bold"),
     panel.grid.major.y = element_line(colour = "grey90", linewidth = 0.3),
     legend.position    = "none"
   )
@@ -210,7 +204,8 @@ make_bar <- function(df, tag, title, y_limits = c(0, 100)) {
     scale_y_continuous(expand = c(0, 0), labels = function(x) paste0(x, "%")) +
     coord_cartesian(ylim = y_limits) +
     labs(#y = "Percentage of site-level bleaching events (1985-2024)", 
-      y = "Percentage of site-level bleaching events (2024)", 
+      #y = "Percentage of bleaching events greater than 10%", 
+      y = "Percentage of bleaching events greater than 20%", 
       #y = "Percentage of site-level bleaching events", 
       x = NULL, tag = tag, title = title) +
     bar_theme
@@ -243,31 +238,24 @@ yr2024_20_company  <- get_2024_attribution_df(step2_20_v2,  company_labels)
 # 2024 plots
 #p_2024_0_country  <- make_bar(yr2024_0_country,  "a", "Country contributions to any bleaching (>0%)", c(0, 100))
 #p_2024_0_company  <- make_bar(yr2024_0_company,  "b", "Company contributions to any bleaching (>0%)", c(0, 100))
-p_2024_10_country  <- make_bar(yr2024_10_country,  "a", "Country contributions to bleaching (>10%)", c(0, 100))
-p_2024_10_company  <- make_bar(yr2024_10_company,  "c", "Company contributions to bleaching (>10%)", c(0, 100))
-p_2024_20_country  <- make_bar(yr2024_20_country,  "b", "Country contributions to bleaching (>20%)", c(0, 100))
-p_2024_20_company  <- make_bar(yr2024_20_company,  "d", "Company contributions to bleaching (>20%)", c(0, 100))
+p_2024_10_country  <- make_bar(yr2024_10_country,  "b", "Country contributions to bleaching (2024)", c(0, 100))
+p_2024_10_company  <- make_bar(yr2024_10_company,  "d", "Carbon major contributions to bleaching (2024)", c(0, 100))
+p_2024_20_country  <- make_bar(yr2024_20_country,  "b", "Country contributions to bleaching (2024)", c(0, 100))
+p_2024_20_company  <- make_bar(yr2024_20_company,  "d", "Carbon major contributions to bleaching (2024)", c(0, 100))
 #p_2024_30_country <- make_bar(yr2024_30_country, "c", "Country contributions to mass bleaching (>30%", c(0, 100))
 #p_2024_30_company <- make_bar(yr2024_30_company, "d", "Company contributions to mass bleaching (>30%)", c(0, 100))
 
 # Cumulative plots
 #p_cum_0_country  <- make_bar(tot_attr_0_country,  "a", "Country contributions to any bleaching (>0%)", c(0, 100))
 #p_cum_0_company  <- make_bar(tot_attr_0_company,  "b", "Company contributions to any bleaching (>0%)", c(0, 100))
-p_cum_10_country  <- make_bar(tot_attr_10_country,  "a", "Country contributions to bleaching (>10%)", c(0, 100))
-p_cum_10_company  <- make_bar(tot_attr_10_company,  "c", "Company contributions to bleaching (>10%)", c(0, 100))
-p_cum_20_country  <- make_bar(tot_attr_20_country,  "b", "Country contributions to bleaching (>20%)", c(0, 100))
-p_cum_20_company  <- make_bar(tot_attr_20_company,  "d", "Company contributions to bleaching (>20%)", c(0, 100))
+p_cum_10_country  <- make_bar(tot_attr_10_country,  "a", "Country contributions to bleaching (1985-2024)", c(0, 100))
+p_cum_10_company  <- make_bar(tot_attr_10_company,  "c", "Carbon major contributions to bleaching (1985-2024)", c(0, 100))
+p_cum_20_country  <- make_bar(tot_attr_20_country,  "a", "Country contributions to bleaching (1985-2024)", c(0, 100))
+p_cum_20_company  <- make_bar(tot_attr_20_company,  "c", "Carbon major contributions to bleaching (1985-2024)", c(0, 100))
 #p_cum_30_country <- make_bar(tot_attr_30_country, "c", "Country contributions to mass bleaching (>30%)", c(0, 100))
 #p_cum_30_company <- make_bar(tot_attr_30_company, "d", "Company contributions to mass bleaching (>30%)", c(0, 100))
 
 #### Assemble figures ####
-# Figure for 2024
-fig_2024 <- (p_2024_0_country | p_2024_0_company) / (p_2024_30_country | p_2024_30_company)
-fig_2024
-
-# Figure for cumulative
-
-
 
 fig_cumulative <- (p_cum_10_country | p_cum_20_country) / (p_cum_10_company | p_cum_20_company)
 fig_cumulative
@@ -278,17 +266,22 @@ fig_2024 <- (p_2024_10_country | p_2024_20_country) / (p_2024_10_company | p_202
 fig_2024
 
 
+fig_10 <- (p_cum_10_country | p_2024_10_country) / (p_cum_10_company | p_2024_10_company)
+
+fig_20 <- (p_cum_20_country | p_2024_20_country) / (p_cum_20_company | p_2024_20_company)
 
 
-ggsave("figure_cumulative.png", fig_cumulative,
+
+ggsave("fig_10.png", fig_10,
        width  = 183,
        height = 150,
        units  = "mm",
-       dpi    = 300)
+       dpi    = 600)
 
-ggsave("fig_2024.png", fig_2024,
+ggsave("fig_20.png", fig_20,
        width  = 183,
        height = 150,
        units  = "mm",
-       dpi    = 300)
+       dpi    = 600)
+
 
