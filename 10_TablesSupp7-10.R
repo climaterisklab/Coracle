@@ -5,7 +5,7 @@ library(ncdf4)
 library(dplyr)
 
 #### Load site-country mapping ####
-site_country <- read.csv("/Users/pujapande/Library/CloudStorage/Dropbox/Coracle/Datasets - 01 July 2026/Final_Panel_Data_allDHW_01July.csv")
+site_country <- read.csv("/path/to/Coracle/Datasets - 01 July 2026/Final_Panel_Data_allDHW_01July.csv")
 
 site_country_map <- site_country %>%
   select(Site_ID, Country_Name) %>%
@@ -31,8 +31,7 @@ eu27_uk_members <- c(
 )
 
 #### Batch metadata ####
-#batch_dir <- "/Users/pujapande/Downloads/linear_lat_v2_nd/"
-batch_dir <- "/Users/pujapande/Downloads/linear_lat_conley_season_nd/"
+batch_dir <- "/path/to/Coracle/linear_lat_conley_season_nd/"
 batch_files <- sort(list.files(batch_dir, pattern = "\\.nc$", full.names = TRUE))
 
 nc1 <- nc_open(batch_files[1])
@@ -344,6 +343,10 @@ country_table_20_cumulative <- create_country_table_cumulative(batch_dir, site_i
 
 
 
+country_table_0_2024 <- create_country_table_2024(batch_dir, site_ids_all, site_country_map, aosis_members, eu27_uk_members, threshold = 0)
+country_table_0_cumulative <- create_country_table_cumulative(batch_dir, site_ids_all, site_country_map, aosis_members, eu27_uk_members, threshold = 0)
+
+
 
 
 library(kableExtra)
@@ -504,3 +507,16 @@ create_table_pdf(
   #caption = "Country-specific cumulative bleaching attribution 1985--2024 ($>$20\\% threshold)."
 )
 
+
+create_table_pdf(
+  transpose_table(country_table_0_cumulative),
+  "table_country_0_cumulative.pdf"
+  #caption = "Country-specific cumulative bleaching attribution 1985--2024 ($>$0\\% threshold)."
+)
+
+
+create_table_pdf(
+  transpose_table(country_table_0_2024),
+  "table_country_0_2024.pdf"
+  #caption = "Country-specific cumulative bleaching attribution 1985--2024 ($>$0\\% threshold)."
+)
