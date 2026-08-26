@@ -35,6 +35,7 @@ All_Bleaching_Events_Data_AllDHW_Max <- left_join(All_Bleaching_Events_Data_AllD
 
 
 
+
 #### Fit models ####
 # Linear FE
 model_linear <- feols(
@@ -55,30 +56,42 @@ model_zoib <- glmmTMB(
 dhw_seq <- seq(0, max(All_Bleaching_Events_Data_AllDHW_Max$dhw, na.rm = TRUE),
                length.out = 300)
 
+# Reference latitude the curves below are evaluated at, matching figure_1_updated.R's
+# panel C "13°" curve. Both models include a dhw:abs_lat interaction, so the slope
+# isn't a single number — it depends on which latitude you evaluate it at (e.g. the
+# linear model's slope is 3.82 at the equator vs 2.13 at 13°, since the interaction
+# coefficient is negative). Previously these curves used only the dhw main-effect
+# coefficient, silently plotting the abs_lat=0 (steepest) slope instead.
+PLOT_ABS_LAT <- 13
+
 # Linear
-b_lin  <- coef(model_linear)["dhw"]
-se_lin <- model_linear$se["dhw"]
+b_lin      <- coef(model_linear)["dhw"]
+b_lin_lat  <- coef(model_linear)["dhw:abs_lat"]
+se_lin     <- model_linear$se["dhw"]
 
 # ZOIB
-b_zoib   <- fixef(model_zoib)$cond["dhw"]
-se_zoib  <- sqrt(vcov(model_zoib)$cond["dhw", "dhw"])
-int_zoib <- fixef(model_zoib)$cond["(Intercept)"]
+b_zoib     <- fixef(model_zoib)$cond["dhw"]
+b_zoib_lat <- fixef(model_zoib)$cond["dhw:abs_lat"]
+se_zoib    <- sqrt(vcov(model_zoib)$cond["dhw", "dhw"])
+int_zoib   <- fixef(model_zoib)$cond["(Intercept)"]
 
 #### Predictions ####
 pred_df <- data.frame(dhw = dhw_seq) %>%
   mutate(
-    # Linear
-    pred_linear  = b_lin * dhw,
-    ci_lo_linear = pmax((b_lin - 1.96 * se_lin) * dhw, 0),
-    ci_hi_linear = pmin((b_lin + 1.96 * se_lin) * dhw, 100),
-    
-    # ZOIB - subtract baseline at DHW=0
+    # Linear, evaluated at abs_lat = PLOT_ABS_LAT
+    slope_lin    = b_lin + b_lin_lat * PLOT_ABS_LAT,
+    pred_linear  = slope_lin * dhw,
+    ci_lo_linear = pmax((slope_lin - 1.96 * se_lin) * dhw, 0),
+    ci_hi_linear = pmin((slope_lin + 1.96 * se_lin) * dhw, 100),
+
+    # ZOIB, evaluated at abs_lat = PLOT_ABS_LAT - subtract baseline at DHW=0
+    slope_zoib    = b_zoib + b_zoib_lat * PLOT_ABS_LAT,
     baseline_zoib = plogis(int_zoib) * 100,
-    pred_zoib     = plogis(int_zoib + b_zoib * dhw) * 100 - baseline_zoib,
-    ci_lo_zoib    = pmax(plogis(int_zoib + (b_zoib - 1.96 * se_zoib) * dhw) * 100 - baseline_zoib, 0),
-    ci_hi_zoib    = pmin(plogis(int_zoib + (b_zoib + 1.96 * se_zoib) * dhw) * 100 - baseline_zoib, 100)
+    pred_zoib     = plogis(int_zoib + slope_zoib * dhw) * 100 - baseline_zoib,
+    ci_lo_zoib    = pmax(plogis(int_zoib + (slope_zoib - 1.96 * se_zoib) * dhw) * 100 - baseline_zoib, 0),
+    ci_hi_zoib    = pmin(plogis(int_zoib + (slope_zoib + 1.96 * se_zoib) * dhw) * 100 - baseline_zoib, 100)
   ) %>%
-  select(-baseline_zoib)
+  select(-baseline_zoib, -slope_lin, -slope_zoib)
 
 #### Reshape to long ####
 pred_long <- pred_df %>%
@@ -86,7 +99,7 @@ pred_long <- pred_df %>%
                names_to = "model", values_to = "pred") %>%
   mutate(model = recode(model,
                         pred_linear   = "Linear with Latitude Interaction",
-                        pred_zoib     = "Zero-One-Inflated Beta with Latitude Interaction"
+                        pred_zoib     = "Zero-One-Inflated Beta with Latitude\nInteraction"
   ))
 
 ci_long <- pred_df %>%
@@ -94,7 +107,7 @@ ci_long <- pred_df %>%
                names_to = "model", values_to = "ci_lo") %>%
   mutate(model = recode(model,
                         ci_lo_linear   = "Linear with Latitude Interaction",
-                        ci_lo_zoib     = "Zero-One-Inflated Beta with Latitude Interaction"
+                        ci_lo_zoib     = "Zero-One-Inflated Beta with Latitude\nInteraction"
   )) %>%
   left_join(
     pred_df %>%
@@ -102,7 +115,7 @@ ci_long <- pred_df %>%
                    names_to = "model", values_to = "ci_hi") %>%
       mutate(model = recode(model,
                             ci_hi_linear   = "Linear with Latitude Interaction",
-                            ci_hi_zoib     = "Zero-One-Inflated Beta with Latitude Interaction"
+                            ci_hi_zoib     = "Zero-One-Inflated Beta with Latitude\nInteraction"
       )),
     by = c("dhw", "model")
   )
@@ -114,7 +127,7 @@ plot_df <- left_join(pred_long,
 #### Colours ####
 model_colours <- c(
   "Linear with Latitude Interaction"                   = "#0072B2",
-  "Zero-One-Inflated Beta with Latitude Interaction"         = "#E69F00"
+  "Zero-One-Inflated Beta with Latitude\nInteraction"         = "#E69F00"
 )
 
 #### Plot ####
@@ -127,7 +140,7 @@ p_models <- ggplot() +
   geom_line(
     data      = plot_df,
     aes(x = dhw, y = pred, colour = model),
-    linewidth = 0.9
+    linewidth = 0.8
   ) +
   scale_colour_manual(values = model_colours, name = NULL) +
   scale_fill_manual(values   = model_colours, guide = "none") +
@@ -137,18 +150,18 @@ p_models <- ggplot() +
     x = "Degree heating weeks (DHW)",
     y = "Coral bleaching (%)"
   ) +
-  theme_classic(base_size = 24, base_family = "Arial") +
+  theme_classic(base_size = 7, base_family = "Arial") +
   theme(
     axis.line        = element_blank(),
-    panel.border      = element_rect(fill = NA, colour = "black", linewidth = 1),  # Thicker darker border
-    axis.ticks        = element_line(linewidth = 0.8, colour = "black"),             # Darker thicker ticks
-    axis.ticks.length = unit(7, "pt"), 
-    axis.title.y = element_text(size = 23, colour = "black", margin = margin(r = 15)),
-    axis.text        = element_text(size = 21, colour = "black"),
-    axis.title       = element_text(size = 23, colour = "black"),
-    legend.text      = element_text(size = 21, colour = "black"),
+    panel.border      = element_rect(fill = NA, colour = "black", linewidth = 0.5),
+    axis.ticks        = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks.length = unit(3, "pt"),
+    axis.title.y = element_text(size = 7, colour = "black", margin = margin(r = 10)),
+    axis.text        = element_text(size = 6, colour = "black"),
+    axis.title       = element_text(size = 7, colour = "black"),
+    legend.text      = element_text(size = 6, colour = "black"),
     legend.position  = "top",
-    legend.key.width = unit(1.2, "cm"),
+    legend.key.width = unit(0.5, "cm"),
     panel.grid       = element_blank(),
     plot.margin      = margin(4, 6, 4, 4),
     aspect.ratio = 0.7
@@ -157,8 +170,7 @@ p_models <- ggplot() +
 p_models
 
 #### Settings ####
-PLOT_ABS_LAT <- 13
-base_path    <- "path/to/Coracle/OneDrive"
+base_path    <- "path/to/Coracle"
 
 #### Load model outputs ####
 modlin      <- read.csv(file.path(base_path, "linear_lat_conley200km_coefs.csv"))
@@ -234,13 +246,20 @@ p_models_binned <- p_models +
   geom_errorbar(
     data  = bin_df,
     aes(x = dhw, ymin = pmax(ci_lo, 0), ymax = ci_hi),
-    width = 0.2, linewidth = 0.5, colour = "black"
+    width = 0.2, linewidth = 0.4, colour = "black"
   ) +
   geom_point(
     data   = bin_df,
     aes(x  = dhw, y = pred),
-    colour = "black", size = 2, shape = 16
+    colour = "black", size = 1.5, shape = 16
   )
 
 p_models_binned
+
+ggsave("supp_model_comparison.png", p_models_binned,
+       width  = 89,
+       height = 89,
+       units  = "mm",
+       dpi    = 600)
+
 
