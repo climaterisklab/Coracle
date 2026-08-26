@@ -1,10 +1,6 @@
 #### author: Puja Pande
-#### description: builds main text Figure 1 (emissions/GMT time series, DHW response
-####              curves, and model coefficient panels), assembled with patchwork
+#### description: builds main text Figure 1 (sites map, and model coefficient panels), assembled with patchwork
 #### note: large fonts used for screenshot/presentation use; panel labels added manually
-
-# FIGURE 1 — Large fonts for screenshot/presentation use
-# Panel labels will be added manually
 
 library(cowplot)
 library(patchwork)
@@ -15,207 +11,233 @@ library(ncdf4)
 library(dplyr)
 library(lubridate)
 library(fixest)
+library(sf)
+library(rnaturalearth)
+library(terra)
+library(marmap)
 loadfonts(device = "pdf", quiet = TRUE)
 
-#### Font size constants — large for screen ####
-BS  <- 14   # base_size
-AT  <- 13   # axis title
-ATX <- 11   # axis text
-LT  <- 11   # legend text
+#### Font size constants — Nature guidelines (5-7 pt at final print size) ####
+BS  <- 7    # base_size
+AT  <- 7    # axis title
+ATX <- 6    # axis text
+LT  <- 6    # legend text
+TAG <- 8    # panel tag (a/b/c), bold
 LW  <- 0.5  # thin line
 LWM <- 0.8  # medium line
 
-#### ── DATA ─────────────────────────────────────────────────────────────── ####
+#### ── PANEL DATA ───────────────────────────────────────────────────────────
+All_Bleaching_Events_Data_AllDHW <- read.csv("path/to/Coracle/Datasets - 01 July 2026/Final_Panel_Data_allDHW_01July.csv")
+All_Bleaching_Events_Data_AllDHW$abs_lat <- abs(All_Bleaching_Events_Data_AllDHW$Latitude_Degrees)
+All_Bleaching_Events_Data_AllDHW <- All_Bleaching_Events_Data_AllDHW %>%
+  mutate(Ecoregion_Month = interaction(Ecoregion_Name, Date_Month, drop = TRUE))
 
-emissions <- read.csv("path/to/Coracle/Scripts/cumulative_global_emissions.csv",
-                      row.names = 1)
-emissions$Year  <- seq(1850, by = 1, length.out = nrow(emissions))
-emissions$World <- emissions$World * 3.664 / 1000
+#### ── PANEL A: SITES MAP (basemap shared, cached to disk after first build) ────
+# Rebuilding the global bathymetry raster (download + reproject) on every run
+# is memory-heavy; in a persistent IDE session (unlike a fresh Rscript call)
+# that spike stacks on top of whatever else is already loaded and can crash
+# the R session. Cache it once and read from disk on subsequent runs.
+robin_pac <- "+proj=robin +lon_0=150 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs"
 
-nc_gmt   <- nc_open("path/to/Coracle/Scripts/ERA5_GMT.nc")
-gmt_vals <- ncvar_get(nc_gmt, "GMT")
-gmt_year <- nc_gmt$dim$year$vals
-nc_close(nc_gmt)
-gmt_df   <- data.frame(year = gmt_year, GMT = gmt_vals)
+# Absolute path (not relative to whatever the current session's working
+# directory happens to be) so the cache is always found regardless of
+# whether this is run via Rscript or sourced inside an IDE session.
+cache_dir <- "/Users/pujapande/Library/CloudStorage/Dropbox/Coracle/Positron Test/map_cache"
+if (!dir.exists(cache_dir)) dir.create(cache_dir)
+world_cache    <- file.path(cache_dir, "world_robin.rds")
+bathy_cache    <- file.path(cache_dir, "bathy_robin.tif")
+bathy_df_cache <- file.path(cache_dir, "bathy_df_robin.rds")  # cache the DATA FRAME, not just the raster
 
-data <- read.csv("path/to/Coracle/Datasets/Final_Combined_Data_all_levels_01July2026.csv")
-data <- data %>%
-  filter(!(Source == "GCBD" & is.na(Bleaching_Level))) %>%
-  filter(Bleaching_Level == "Population" | is.na(Bleaching_Level))
+# Single-threaded GDAL: multi-threaded raster reprojection/conversion has been
+# observed to crash the R session under Positron/ark's sandboxed execution
+# context — `as.data.frame()` on a SpatRaster segfaults ark specifically, even
+# though it's fine under plain Rscript. Set this before ANY terra call.
+Sys.setenv(GDAL_NUM_THREADS = "1", OMP_NUM_THREADS = "1")
+terra::terraOptions(threads = 1, memfrac = 0.3)
 
-data$abs_lat <- abs(data$Latitude_Degrees)
+if (file.exists(world_cache)) {
+  world <- readRDS(world_cache)
+} else {
+  world <- ne_countries(scale = "medium", returnclass = "sf") %>%
+    st_transform(robin_pac)
+  saveRDS(world, world_cache)
+}
 
-left_df <- left_join(emissions, gmt_df, by = c("Year" = "year")) %>%
-  filter(Year >= 1985) %>%
-  mutate(World = World / 1000)
+# ---- bathy_df: this is the crash point. Cache the finished data frame so
+# the risky raster->data.frame conversion only ever has to run ONCE, and
+# ideally that first run happens via plain `Rscript`, not inside Positron.
+if (file.exists(bathy_df_cache)) {
+  bathy_df <- readRDS(bathy_df_cache)
 
-nc_dhw     <- nc_open("path/to/data/DHWmm_1985-2025.nc")
-time_vals  <- ncvar_get(nc_dhw, "time")
-time_units <- ncatt_get(nc_dhw, "time", "units")$value
-origin     <- as.Date(sub("days since ", "", time_units))
-dates      <- origin + time_vals
-years      <- year(dates)
-dhw_vals   <- ncvar_get(nc_dhw, "DHW")
-dhw_vals[is.nan(dhw_vals)] <- NA
-nc_close(nc_dhw)
+} else {
 
-dhw_annual <- data.frame(
-  year = unique(years),
-  mean_dhw  = sapply(unique(years), function(y) {
-    s <- apply(dhw_vals[, years == y], 1, max, na.rm = TRUE)
-    mean(s, na.rm = TRUE) }),
-  ci_lo_dhw = sapply(unique(years), function(y) {
-    s <- apply(dhw_vals[, years == y], 1, max, na.rm = TRUE); n <- sum(!is.na(s))
-    mean(s, na.rm = TRUE) - 1.96 * sd(s, na.rm = TRUE) / sqrt(n) }),
-  ci_hi_dhw = sapply(unique(years), function(y) {
-    s <- apply(dhw_vals[, years == y], 1, max, na.rm = TRUE); n <- sum(!is.na(s))
-    mean(s, na.rm = TRUE) + 1.96 * sd(s, na.rm = TRUE) / sqrt(n) })
+  message(
+    "No cached bathy_df found. This step (raster -> data.frame conversion) ",
+    "has crashed Positron's ark kernel before. Strongly recommended: run this ",
+    "block once via `Rscript this_file.R` in a terminal instead of inside ",
+    "Positron, then just re-source this script in Positron afterwards — it ",
+    "will pick up the cache and skip straight past this block."
+  )
+
+  if (file.exists(bathy_cache)) {
+    bathy_robin <- rast(bathy_cache)
+  } else {
+    bathy_raw <- getNOAA.bathy(
+      lon1 = -180, lon2 = 180,
+      lat1 = -90,  lat2 = 90,
+      resolution = 20, keep = TRUE
+    )
+
+    bathy_xyz <- as.xyz(bathy_raw) %>%
+      as.data.frame() %>%
+      setNames(c("lon", "lat", "depth"))
+    rm(bathy_raw); gc()
+
+    bathy_terra <- rast(bathy_xyz, type = "xyz", crs = "EPSG:4326")
+    rm(bathy_xyz); gc()
+    bathy_terra[bathy_terra > 0] <- NA
+    bathy_robin <- project(bathy_terra, robin_pac, method = "bilinear")
+    rm(bathy_terra); gc()
+
+    writeRaster(bathy_robin, bathy_cache, overwrite = TRUE)
+  }
+
+  # Round-trip through disk instead of a direct in-memory as.data.frame()
+  # call — writeRaster + rast() + as.data.frame() on the disk-backed object
+  # has been more stable than converting the in-memory SpatRaster directly.
+  writeRaster(bathy_robin, file.path(cache_dir, "bathy_tmp_conv.tif"), overwrite = TRUE)
+  bathy_df <- as.data.frame(rast(file.path(cache_dir, "bathy_tmp_conv.tif")), xy = TRUE)
+  file.remove(file.path(cache_dir, "bathy_tmp_conv.tif"))
+
+  rm(bathy_robin); gc()
+
+  saveRDS(bathy_df, bathy_df_cache)
+}
+
+ocean_palette <- colorRampPalette(c("#AED6F1"))(100)
+
+# Latitude graticule (parallels only, no meridians). Parallels are exactly
+# straight horizontal lines under the Robinson projection, so the spurious
+# chord st_graticule() draws where its longitude sequence crosses the
+# antimeridian of this off-centre (lon_0 = 150) projection retraces the same
+# horizontal line rather than cutting a visible diagonal across the map —
+# safe to use directly without manually splitting at the seam.
+lat_graticule <- st_graticule(lat = seq(-60, 60, 20), lon = seq(-180, 180, 20), ndiscr = 200) %>%
+  filter(type == "N") %>%
+  st_transform(robin_pac)
+
+# Equator + tropics as dashed reference lines, with their latitude labelled
+# on the left edge of the map. Parallels are straight horizontal lines under
+# this Robinson projection (see note above lat_graticule), so a single
+# projected point at any longitude gives the correct y for the label.
+ref_lats   <- c(-23.4368, 0, 23.4368)
+ref_labels <- c("23.5°S", "0°", "23.5°N")
+
+ref_graticule <- st_graticule(lat = ref_lats, lon = seq(-180, 180, 20), ndiscr = 200) %>%
+  filter(type == "N") %>%
+  st_transform(robin_pac)
+
+ref_label_df <- data.frame(lat = ref_lats, label = ref_labels)
+ref_label_df$y <- vapply(ref_lats, function(l) {
+  pt <- st_sfc(st_point(c(0, l)), crs = 4326) %>% st_transform(robin_pac)
+  st_coordinates(pt)[2]
+}, numeric(1))
+ref_label_df$x <- -16700000
+
+base_map_layers <- list(
+  geom_raster(data = bathy_df, aes(x = x, y = y, fill = depth)),
+  scale_fill_gradientn(colours = ocean_palette, limits = c(-6000, 0),
+                       na.value = "#AED6F1", guide = "none"),
+  geom_sf(data = world, fill = "grey85", colour = "grey60", linewidth = 0.2),
+  #geom_sf(data = lat_graticule, colour = "grey50", linewidth = 0.15, alpha = 0.4),
+  geom_sf(data = ref_graticule, colour = "grey55", linewidth = 0.35,
+          linetype = "dotted", alpha = 0.8),
+  geom_text(data = ref_label_df, aes(x = x, y = y, label = label),
+            hjust = 0, vjust = -0.4, size = ATX / .pt, colour = "grey20",
+            family = "Arial", inherit.aes = FALSE)
 )
 
-bleaching_obs <- data %>%
-  group_by(Date_Year, Site_ID) %>%
-  summarise(site_max = max(Percent_Bleached, na.rm = TRUE), .groups = "drop") %>%
-  group_by(Date_Year) %>%
-  summarise(
-    mean_bleaching_obs = mean(site_max, na.rm = TRUE),
-    ci_lo_bleaching    = pmax(mean(site_max) - 1.96 * sd(site_max) / sqrt(n()), 0),
-    ci_hi_bleaching    = mean(site_max) + 1.96 * sd(site_max) / sqrt(n()),
-    .groups = "drop"
-  ) %>% rename(year = Date_Year)
-
-left_df <- left_df %>%
-  left_join(dhw_annual,    by = c("Year" = "year")) %>%
-  left_join(bleaching_obs, by = c("Year" = "year"))
-
-left_df_1985 <- left_df %>%
-  rename(year = Year) %>%
-  mutate(
-    ci_lo_bleaching = pmax(ci_lo_bleaching, 0),
-    ci_hi_bleaching = pmax(ci_hi_bleaching, 0)
-  )
-left_df_1985$ci_lo_bleaching[37] <- 4.2
-left_df_1985$ci_hi_bleaching[37] <- 4.2
-
-gmt_range <- range(left_df_1985$GMT, na.rm = TRUE)
-GMT_LO    <- floor(gmt_range[1]   * 2) / 2
-GMT_HI    <- ceiling(gmt_range[2] * 2) / 2
-
-
-#### ── PANEL A DONORS ────────────────────────────────────────────────────── ####
-
-p_spacer <- ggplot() + theme_void()
-
-p_emissions_donor <- ggplot(left_df_1985, aes(x = year, y = World)) +
-  geom_line(colour = "#009E73", linewidth = LW) +
-  scale_x_continuous(limits = c(1985, 2024), expand = c(0, 0)) +
-  scale_y_continuous(limits = c(0, 2), breaks = seq(0, 2, by = 0.4), expand = c(0, 0)) +
-  labs(y = expression("Cumulative emissions (TtCO"[2]*")"), tag = "a") +
-  theme_classic(base_size = BS, base_family = "Arial") +
+map_theme <- theme_void(base_family = "Arial") +
   theme(
-    axis.title.y = element_text(colour = "#009E73", size = AT, vjust = 0),
-    axis.text.y  = element_text(colour = "#009E73", size = ATX),
-    axis.ticks.y = element_line(colour = "#009E73", linewidth = LW),
-    axis.line.y  = element_line(colour = "#009E73", linewidth = LW),
-    plot.margin  = margin(0, 0, 0, 0)
+    panel.background = element_rect(fill = "#AED6F1", colour = NA),
+    panel.border     = element_rect(fill = NA, colour = "black", linewidth = 0.4),
+    legend.position   = "bottom",
+    legend.title      = element_text(size = LT),
+    legend.text       = element_text(size = ATX),
+    plot.tag          = element_text(size = TAG, face = "bold")
   )
 
-p_gmst_donor <- ggplot(left_df_1985, aes(x = year, y = GMT)) +
-  geom_line(alpha = 0.5, linetype = "dashed", colour = "grey40", linewidth = LW) +
-  scale_x_continuous(limits = c(1985, 2024), expand = c(0, 0)) +
-  scale_y_continuous(limits = c(GMT_LO, GMT_HI),
-                     breaks = seq(GMT_LO, GMT_HI, by = 0.4), expand = c(0, 0)) +
-  labs(y = "GMST (°C)") +
-  theme_classic(base_size = BS, base_family = "Arial") +
-  theme(
-    axis.title.y = element_text(colour = "grey40", size = AT, vjust = 0),
-    axis.text.y  = element_text(colour = "grey40", size = ATX),
-    axis.ticks.y = element_line(colour = "grey40", linewidth = LW),
-    axis.line.y  = element_line(colour = "grey40", linewidth = LW),
-    plot.margin  = margin(0, 0, 0, -1000)
-  )
+map_coord <- coord_sf(crs = robin_pac, xlim = c(-17000000, 17000000),
+                       ylim = c(-4000000, 4000000), expand = FALSE)
 
-p_dhw_donor <- ggplot(left_df_1985, aes(x = year, y = mean_dhw)) +
-  geom_line(colour = "#0072B2", linewidth = LW) +
-  scale_x_continuous(limits = c(1985, 2024), expand = c(0, 0)) +
-  scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, by = 2),
-                     position = "right", expand = c(0, 0)) +
-  labs(y = "Mean DHW across sites (°C-weeks)") +
-  theme_classic(base_size = BS, base_family = "Arial") +
-  theme(
-    axis.title.y.right        = element_text(colour = "#0072B2", size = AT,
-                                             angle = -90, vjust = 0.5),
-    axis.text.y.right         = element_text(colour = "#0072B2", size = ATX,
-                                             margin = margin(l = 4)),
-    axis.ticks.y.right        = element_line(colour = "#0072B2", linewidth = LW),
-    axis.ticks.length.y.right = unit(4, "pt"),
-    axis.line.y.right         = element_line(colour = "#0072B2", linewidth = LW),
-    plot.margin               = margin(0, -2000, 0, -2000)
-  )
+# Per-site count of bleaching observations (i.e. surveys), regardless of
+# whether bleaching was recorded at each one — a survey reading 0% bleaching
+# is still an observation. Built from the raw combined dataset (not the
+# panel-regression CSV) so this map's site extent matches Fig. S12's "all
+# sites" layer — the panel CSV structurally excludes single-observation
+# sites upstream (in Merging_GCBD_MERMAID.R), which was why the two figures
+# previously showed different geographic coverage (e.g. Red Sea, northern
+# SA / southern Mozambique). Restricted to MERMAID + GCBD-Population rows,
+# same filter used for Plot_Supp1_and_12.R's all_sites_sf.
+combined_raw <- read.csv("/Users/pujapande/Library/CloudStorage/Dropbox/Coracle/Datasets - 01 July 2026/Final_Combined_Data_all_levels_01July2026.csv") %>%
+  filter(Source == "Mermaid" | (Source == "GCBD" & Bleaching_Level == "Population"))
 
-p_bleach_donor <- ggplot(left_df_1985, aes(x = year, y = mean_bleaching_obs)) +
-  geom_line(colour = "#D55E00", linewidth = LW) +
-  scale_x_continuous(limits = c(1985, 2024), expand = c(0, 0)) +
-  scale_y_continuous(limits = c(0, 50), breaks = seq(0, 50, by = 10),
-                     position = "right", expand = c(0, 0)) +
-  labs(y = "Mean maximum bleaching across sites (%)") +
-  theme_classic(base_size = BS, base_family = "Arial") +
-  theme(
-    axis.title.y.right        = element_text(colour = "#D55E00", size = AT,
-                                             angle = -90, vjust = 0.1),
-    axis.text.y.right         = element_text(colour = "#D55E00", size = ATX,
-                                             margin = margin(l = 4)),
-    axis.ticks.y.right        = element_line(colour = "#D55E00", linewidth = LW),
-    axis.ticks.length.y.right = unit(4, "pt"),
-    axis.line.y.right         = element_line(colour = "#D55E00", linewidth = LW),
-    plot.margin               = margin(0, -6000, 0, -2000)
-  )
+site_bleach_sf <- combined_raw %>%
+  group_by(Site_ID) %>%
+  mutate(n_bleached = n()) %>%
+  distinct(Site_ID, Latitude_Degrees, Longitude_Degrees, n_bleached) %>%
+  ungroup() %>%
+  st_as_sf(coords = c("Longitude_Degrees", "Latitude_Degrees"), crs = 4326) %>%
+  st_transform(robin_pac) %>%
+  mutate(bleach_cat = cut(n_bleached,
+                          breaks = c(0, 1, 2, 5, 10, Inf),
+                          labels = c("1", "2", "3–5", "6–10", "10+"),
+                          right  = TRUE))
 
-#### ── PANEL A MAIN ──────────────────────────────────────────────────────── ####
-
-p_main <- ggplot(left_df_1985, aes(x = year)) +
-  geom_line(aes(y = scales::rescale(World, to = c(0, 10), from = c(0, 2))),
-            colour = "#009E73", linetype = "longdash", linewidth = LWM, alpha = 0.6) +
-  geom_line(aes(y = scales::rescale(GMT, to = c(0, 10), from = c(GMT_LO, GMT_HI))),
-            linetype = "dashed", colour = "grey40", alpha = 0.6, linewidth = LW) +
-  geom_line(aes(y = mean_dhw), colour = "#0072B2", linewidth = LW) +
-  geom_line(aes(y = scales::rescale(mean_bleaching_obs, to = c(0, 10), from = c(0, 50))),
-            colour = "#D55E00", linewidth = LW, na.rm = TRUE) +
-  scale_x_continuous(
-    breaks = seq(1985, 2024, by = 5),
-    limits = c(1985, 2024),
-    expand = c(0, 0)
+p_bleach_count <- ggplot() +
+  base_map_layers +
+  geom_sf(data = site_bleach_sf,
+          aes(colour = bleach_cat, size = bleach_cat),
+          alpha = 0.8, shape = 16) +
+  scale_colour_manual(
+    name   = "Number of bleaching observations",
+    values = c(
+               "1"  = "grey40",
+               "2"  = "#F0E442",
+               "3–5"  = "#E69F00",
+               "6–10" = "#D55E00",
+               "10+"  = "#7B3500")
   ) +
-  scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, by = 2), expand = c(0, 0)) +
-  labs(x = "Year", tag = "a") +
-  theme_classic(base_size = BS, base_family = "Arial") +
+  scale_size_manual(
+    name   = "Number of bleaching observations",
+    values = c("1" = 1, "2" = 1.2, "3–5" = 2, "6–10" = 2.8, "10+" = 3.6),
+    guide  = "none"
+  ) +
+  guides(colour = guide_legend(
+    title.position = "top",
+    title.hjust    = 0.5,
+    label.position = "bottom",
+    nrow           = 1,
+    override.aes   = list(size = c(1, 1.2, 2, 2.8, 3.6), alpha = 1)
+  )) +
+  map_coord +
+  labs(tag = "a") +
+  map_theme +
   theme(
-    axis.title.y.left  = element_blank(), axis.text.y.left  = element_blank(),
-    axis.ticks.y.left  = element_blank(), axis.line.y.left  = element_blank(),
-    axis.title.y.right = element_blank(), axis.text.y.right = element_blank(),
-    axis.ticks.y.right = element_blank(), axis.line.y.right = element_blank(),
-    axis.title.x = element_text(size = AT),
-    axis.text.x  = element_text(size = ATX, margin = margin(t = 3)),
-    axis.line.x  = element_line(colour = "black", linewidth = LW),
-    plot.margin  = margin(5, -80, 0, -20)
+    legend.direction    = "horizontal",
+    legend.position     = "bottom",
+    legend.key          = element_blank(),
+    legend.key.width    = unit(0.5, "cm"),
+    legend.spacing.x    = unit(0.1, "cm"),
+    legend.box.spacing  = unit(4, "pt"),
+    legend.margin       = margin(t = 0, b = 4),
+    plot.margin         = margin(t = 0, r = 2, b = 0, l = 2)
   )
-
-p_a <- wrap_elements(get_plot_component(p_emissions_donor, "ylab-l")) +
-  wrap_elements(get_y_axis(p_emissions_donor)) +
-  wrap_elements(get_plot_component(p_gmst_donor, "ylab-l")) +
-  wrap_elements(get_y_axis(p_gmst_donor)) +
-  p_main +
-  wrap_elements(p_spacer) +
-  wrap_elements(get_y_axis(p_dhw_donor,    position = "right")) +
-  wrap_elements(get_plot_component(p_dhw_donor,    "ylab-r")) +
-  wrap_elements(p_spacer) +
-  wrap_elements(get_y_axis(p_bleach_donor, position = "right")) +
-  wrap_elements(get_plot_component(p_bleach_donor, "ylab-r")) +
-  plot_layout(widths = c(1.2, 0.2, 0.5, 0.5, 22, 0, 0.1, 0.6, -0.1, 0.3, 1.1))
 
 #### ── PANEL B ───────────────────────────────────────────────────────────── ####
 
 PLOT_ABS_LAT <- 13
-base_path    <- "path/to/Coracle/OneDrive"
+base_path    <- "path/to/Coracle"
 
 modlin      <- read.csv(file.path(base_path, "linear_lat_conley200km_coefs.csv"))
 modbin      <- read.csv(file.path(base_path, "FE_binned_DHW_conley200km_coefs.csv"))
@@ -308,20 +330,13 @@ p_binned <- ggplot() +
     legend.position   = c(0.15, 0.90),
     legend.title      = element_text(size = LT),
     legend.text       = element_text(size = LT),
-    legend.key.size   = unit(0.5, "cm"),
+    legend.key.size   = unit(0.3, "cm"),
     panel.grid        = element_blank(),
-    plot.margin       = margin(4, 6, 4, 4),
-    aspect.ratio = 1
+    plot.margin       = margin(4, 6, 4, 4)
   )
 
 #### ── PANEL C ───────────────────────────────────────────────────────────── ####
 
-All_Bleaching_Events_Data_AllDHW <- read.csv("path/to/Coracle/Datasets/Final_Panel_Data_allDHW_01July.csv")
-All_Bleaching_Events_Data_AllDHW$abs_lat <- abs(All_Bleaching_Events_Data_AllDHW$Latitude_Degrees)
-All_Bleaching_Events_Data_AllDHW <- All_Bleaching_Events_Data_AllDHW %>%
-  mutate(
-    Ecoregion_Month = interaction(Ecoregion_Name, Date_Month, drop = TRUE)
-  )
 model_linear_lat <- feols(
   Percent_Bleached ~ dhw + dhw:abs_lat | Site_ID + Date_Year + Ecoregion_Month,
   cluster = ~Ecoregion_Name,
@@ -333,11 +348,20 @@ dhw_seq        <- seq(0, dhw_max, length.out = 300)
 median_abs_lat <- median(All_Bleaching_Events_Data_AllDHW$abs_lat, na.rm = TRUE)
 y_max          <- 100
 
+# Conley (200 km, spherical) vcov, matching panel B and the reported intervals
+vcov_lat <- unclass(vcov_conley(
+  model_linear_lat,
+  lat      = "Latitude_Degrees",
+  lon      = "Longitude_Degrees",
+  cutoff   = 200,
+  distance = "spherical"
+))
+
 beta_dhw     <- coef(model_linear_lat)["dhw"]
 beta_dhw_lat <- coef(model_linear_lat)["dhw:abs_lat"]
-se_dhw       <- model_linear_lat$se["dhw"]
-se_dhw_lat   <- model_linear_lat$se["dhw:abs_lat"]
-cov_dhw      <- vcov(model_linear_lat)["dhw", "dhw:abs_lat"]
+se_dhw       <- sqrt(vcov_lat["dhw", "dhw"])
+se_dhw_lat   <- sqrt(vcov_lat["dhw:abs_lat", "dhw:abs_lat"])
+cov_dhw      <- vcov_lat["dhw", "dhw:abs_lat"]
 
 make_linear_curve <- function(lat, label) {
   data.frame(dhw = dhw_seq, lat_group = label) %>%
@@ -351,14 +375,14 @@ make_linear_curve <- function(lat, label) {
 }
 
 linear_curves <- bind_rows(
-  make_linear_curve(0,              "0\u00b0"),
-  make_linear_curve(13, "13\u00b0"),
-  make_linear_curve(23,             "23\u00b0")
+  make_linear_curve(0,              "0°"),
+  make_linear_curve(13, "13°"),
+  make_linear_curve(23,             "23°")
 ) %>%
-  mutate(lat_group = factor(lat_group, levels = c("0\u00b0", "13\u00b0", "23\u00b0")))
+  mutate(lat_group = factor(lat_group, levels = c("0°", "13°", "23°")))
 
-curve_colours <- c("13\u00b0" = "#000000", "0\u00b0" = "#FF4086", "23\u00b0" = "#35A1FF")
-curve_lty     <- c("13\u00b0" = "solid",   "0\u00b0" = "dashed",  "23\u00b0" = "dashed")
+curve_colours <- c("13°" = "#000000", "0°" = "#FF4086", "23°" = "#35A1FF")
+curve_lty     <- c("13°" = "solid",   "0°" = "dashed",  "23°" = "dashed")
 
 p_bl_nature <- ggplot() +
   geom_ribbon(data = linear_curves,
@@ -391,36 +415,30 @@ p_bl_nature <- ggplot() +
     axis.title.y = element_text(size = AT, colour = "black", margin = margin(r = 10)),
     legend.title      = element_text(size = LT,  colour = "black"),
     legend.position   = c(0.15, 0.88),
-    legend.key.width  = unit(0.8, "cm"),
-    legend.key.height = unit(0.3, "cm"),
+    legend.key.width  = unit(0.5, "cm"),
+    legend.key.height = unit(0.2, "cm"),
     legend.spacing.y  = unit(0.05, "cm"),
     panel.grid        = element_blank(),
-    plot.margin       = margin(4, 6, 4, 4),
-    aspect.ratio = 1
+    plot.margin       = margin(4, 6, 4, 4)
   )
 
 #### ── ASSEMBLE & SAVE ───────────────────────────────────────────────────── ####
-fig <- p_a / (p_binned | p_bl_nature) +
-  plot_layout(heights = c(1.1, 1), widths = c(1))
+# p_binned/p_bl_nature previously had aspect.ratio = 1, which forced them to
+# render as squares narrower than their allotted column — that's what made
+# the bottom row occupy less width than panel a's map above it, no matter
+# how the spacer widths were tuned. Dropping the fixed aspect ratio lets both
+# panels stretch to fill their full column, so the bottom row now spans the
+# same total width as panel a without needing manual spacer compensation.
+fig <- p_bleach_count / (p_binned | p_bl_nature) +
+  plot_layout(heights = c(1, 1))
 
 fig
 
-
-fig <- ggdraw() +
-  draw_plot(as_grob(p_a),    x = 0.1,  y = 0.45, width = 0.8,  height = 0.54) +  # narrower A
-  draw_plot(p_binned,        x = 0.09, y = 0,    width = 0.45, height = 0.46) +
-  draw_plot(p_bl_nature,     x = 0.43, y = 0,    width = 0.45, height = 0.46)
-fig
-
-
-
-
-ggsave("figure1_diff_layout.png", fig,
-       width  = 220,   # narrower overall
-       height = 170,   # taller relative to width
+ggsave("figure1_map_panel_a.png", fig,
+       width  = 183,
+       height = 150,
        units  = "mm",
-       dpi    = 200)
-
+       dpi    = 600)
 
 
 
