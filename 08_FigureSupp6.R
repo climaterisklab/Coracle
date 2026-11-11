@@ -10,7 +10,9 @@ library(patchwork)
 library(MetBrewer)
 
 #### Read batch metadata ####
-batch_dir <- "path/to/hpc_output/linear_lat_conley_season_nd/"
+# v2_mixed impact model on the v2 per-cell counterfactuals: rows of pred_factual / pred_cf are grid cells
+# (coord_id, stored in the "site_ids" attribute), not survey sites
+batch_dir <- Sys.getenv("BATCH_DIR", "path/to/hpc_output/v2_mixed_nd/")
 
 batch_files <- sort(list.files(batch_dir, pattern = "\\.nc$", full.names = TRUE))
 
@@ -208,11 +210,20 @@ All_Bleaching_Events_Data_AllDHW <- read.csv("path/to/Coracle/Datasets/Final_Pan
 panel_site_ids <- All_Bleaching_Events_Data_AllDHW %>%
   group_by(Site_ID) %>% filter(n() > 1) %>% pull(Site_ID) %>% unique()
 
+# The model output is per grid cell: translate panel Site_IDs to their cells (coord_id) so that the
+# site_filter in get_batch_counts_corrected_v2() (matched against site_ids_all = coord_id) still works
+sites_v2 <- read.csv("path/to/climate_data/v2_sites/attribution_sites_v2.csv")
+panel_cell_ids <- sites_v2 %>%
+  filter(as.integer(Site_ID) %in% panel_site_ids) %>%
+  pull(coord_id) %>% unique()
+cat("Panel sites:", length(panel_site_ids), "-> cells:", length(panel_cell_ids),
+    "| in model output:", sum(panel_cell_ids %in% site_ids_all), "\n")
+
 #### ── RUN 4 VERSIONS (10% threshold) ─────────────────────────────────── ####
 step2_all        <- get_batch_counts_corrected_v2(batch_dir, threshold = 10)
-step2_panel      <- get_batch_counts_corrected_v2(batch_dir, threshold = 10, site_filter = panel_site_ids)
+step2_panel      <- get_batch_counts_corrected_v2(batch_dir, threshold = 10, site_filter = panel_cell_ids)
 step2_1998       <- get_batch_counts_corrected_v2(batch_dir, threshold = 10, year_from = 1998)
-step2_panel_1998 <- get_batch_counts_corrected_v2(batch_dir, threshold = 10, site_filter = panel_site_ids, year_from = 1998)
+step2_panel_1998 <- get_batch_counts_corrected_v2(batch_dir, threshold = 10, site_filter = panel_cell_ids, year_from = 1998)
 
 #### ── ATTRIBUTION DATAFRAMES ──────────────────────────────────────────── ####
 # Countries

@@ -4,12 +4,16 @@
 library(ncdf4)
 library(dplyr)
 
-#### Load site-country mapping ####
-site_country <- read.csv("/path/to/Coracle/Datasets - 01 July 2026/Final_Panel_Data_allDHW_01July.csv")
+#### Load cell-country mapping ####
+# The v2 model output is per grid cell (coord_id), not per survey site. Each cell takes the country of
+# the survey sites in it (the most frequent one where a cell spans two countries). The column is called
+# Site_ID so that the filters below, which are matched against the output's site_ids (= coord_id), still work.
+sites_v2 <- read.csv("/path/to/climate_data/v2_sites/attribution_sites_v2.csv")
 
-site_country_map <- site_country %>%
-  select(Site_ID, Country_Name) %>%
-  distinct()
+site_country_map <- sites_v2 %>%
+  count(coord_id, Country_Name) %>%
+  group_by(coord_id) %>% slice_max(n, n = 1, with_ties = FALSE) %>% ungroup() %>%
+  select(Site_ID = coord_id, Country_Name)
 
 #### Define AOSIS members ####
 aosis_members <- c(
@@ -31,7 +35,7 @@ eu27_uk_members <- c(
 )
 
 #### Batch metadata ####
-batch_dir <- "/path/to/Coracle/linear_lat_conley_season_nd/"
+batch_dir <- Sys.getenv("BATCH_DIR", "/path/to/Coracle/v2_mixed_nd/")
 batch_files <- sort(list.files(batch_dir, pattern = "\\.nc$", full.names = TRUE))
 
 nc1 <- nc_open(batch_files[1])

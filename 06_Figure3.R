@@ -10,8 +10,11 @@ library(patchwork)
 library(MetBrewer)
 
 #### Read batch metadata ####
-batch_dir <- "path/to/hpc_output/linear_lat_conley_season_nd/"
-#batch_dir <- "path/to/hpc_output/linear_lat_10_v2_nd/"
+# v2_mixed impact model (province-specific linear/sigmoid) applied to the v2 per-cell counterfactuals
+# NB: rows of pred_factual / pred_cf are now grid cells (coord_id, stored in the "site_ids" attribute), not survey sites
+batch_dir <- Sys.getenv("BATCH_DIR", "path/to/hpc_output/v2_mixed_nd/")
+#batch_dir <- "path/to/hpc_output/linear_lat_conley_season_nd/"   # paper model (per survey site)
+fig_dir   <- Sys.getenv("FIG_DIR", ".")
 
 batch_files <- sort(list.files(batch_dir, pattern = "\\.nc$", full.names = TRUE))
 
@@ -91,10 +94,22 @@ get_batch_counts_corrected_v2 <- function(batch_dir, threshold = 0) {
 }
 
 #### Run ####
-#step2_0_v2 <- get_batch_counts_corrected_v2(batch_dir, threshold = 0)
-step2_10_v2 <- get_batch_counts_corrected_v2(batch_dir, threshold = 10)
-step2_20_v2 <- get_batch_counts_corrected_v2(batch_dir, threshold = 20)
-#step2_30_v2 <- get_batch_counts_corrected_v2(batch_dir, threshold = 30)
+# Reading the 84 batch files is slow (~8 GB), so the counts are cached per batch_dir and threshold
+# (delete counts_cache/ after re-running the HPC pipeline)
+counts_cache_dir <- Sys.getenv("COUNTS_CACHE_DIR", "counts_cache")
+dir.create(counts_cache_dir, showWarnings = FALSE, recursive = TRUE)
+get_counts_cached <- function(threshold) {
+  f <- file.path(counts_cache_dir,
+                 sprintf("counts_%s_t%d.rds", basename(normalizePath(batch_dir)), threshold))
+  if (file.exists(f)) return(readRDS(f))
+  res <- get_batch_counts_corrected_v2(batch_dir, threshold = threshold)
+  saveRDS(res, f)
+  res
+}
+#step2_0_v2 <- get_counts_cached(0)
+step2_10_v2 <- get_counts_cached(10)
+step2_20_v2 <- get_counts_cached(20)
+#step2_30_v2 <- get_counts_cached(30)
 
 #### Extract CUMULATIVE attribution (1985-2024) ####
 get_total_attribution_df <- function(step2, label_map) {
@@ -184,7 +199,7 @@ make_colours <- function(df) {
   cols
 }
 
-make_bar <- function(df, tag, title, y_limits = c(0, 100)) {
+make_bar <- function(df, tag, title, y_limits = c(0, 100), thr = 20) {
   summary_df <- df %>%
     group_by(scenario) %>%
     summarise(
@@ -204,8 +219,7 @@ make_bar <- function(df, tag, title, y_limits = c(0, 100)) {
     scale_y_continuous(expand = c(0, 0), labels = function(x) paste0(x, "%")) +
     coord_cartesian(ylim = y_limits) +
     labs(#y = "Percentage of site-level bleaching events (1985-2024)", 
-      #y = "Percentage of bleaching events greater than 10%", 
-      y = "Percentage of bleaching events greater than 20%", 
+      y = paste0("Percentage of bleaching events greater than ", thr, "%"), 
       #y = "Percentage of site-level bleaching events", 
       x = NULL, tag = tag, title = title) +
     bar_theme
@@ -238,8 +252,8 @@ yr2024_20_company  <- get_2024_attribution_df(step2_20_v2,  company_labels)
 # 2024 plots
 #p_2024_0_country  <- make_bar(yr2024_0_country,  "a", "Country contributions to any bleaching (>0%)", c(0, 100))
 #p_2024_0_company  <- make_bar(yr2024_0_company,  "b", "Company contributions to any bleaching (>0%)", c(0, 100))
-p_2024_10_country  <- make_bar(yr2024_10_country,  "b", "Country contributions to bleaching (2024)", c(0, 100))
-p_2024_10_company  <- make_bar(yr2024_10_company,  "d", "Carbon major contributions to bleaching (2024)", c(0, 100))
+p_2024_10_country  <- make_bar(yr2024_10_country,  "b", "Country contributions to bleaching (2024)", c(0, 100), thr = 10)
+p_2024_10_company  <- make_bar(yr2024_10_company,  "d", "Carbon major contributions to bleaching (2024)", c(0, 100), thr = 10)
 p_2024_20_country  <- make_bar(yr2024_20_country,  "b", "Country contributions to bleaching (2024)", c(0, 100))
 p_2024_20_company  <- make_bar(yr2024_20_company,  "d", "Carbon major contributions to bleaching (2024)", c(0, 100))
 #p_2024_30_country <- make_bar(yr2024_30_country, "c", "Country contributions to mass bleaching (>30%", c(0, 100))
@@ -248,8 +262,8 @@ p_2024_20_company  <- make_bar(yr2024_20_company,  "d", "Carbon major contributi
 # Cumulative plots
 #p_cum_0_country  <- make_bar(tot_attr_0_country,  "a", "Country contributions to any bleaching (>0%)", c(0, 100))
 #p_cum_0_company  <- make_bar(tot_attr_0_company,  "b", "Company contributions to any bleaching (>0%)", c(0, 100))
-p_cum_10_country  <- make_bar(tot_attr_10_country,  "a", "Country contributions to bleaching (1985-2024)", c(0, 100))
-p_cum_10_company  <- make_bar(tot_attr_10_company,  "c", "Carbon major contributions to bleaching (1985-2024)", c(0, 100))
+p_cum_10_country  <- make_bar(tot_attr_10_country,  "a", "Country contributions to bleaching (1985-2024)", c(0, 100), thr = 10)
+p_cum_10_company  <- make_bar(tot_attr_10_company,  "c", "Carbon major contributions to bleaching (1985-2024)", c(0, 100), thr = 10)
 p_cum_20_country  <- make_bar(tot_attr_20_country,  "a", "Country contributions to bleaching (1985-2024)", c(0, 100))
 p_cum_20_company  <- make_bar(tot_attr_20_company,  "c", "Carbon major contributions to bleaching (1985-2024)", c(0, 100))
 #p_cum_30_country <- make_bar(tot_attr_30_country, "c", "Country contributions to mass bleaching (>30%)", c(0, 100))
@@ -272,13 +286,13 @@ fig_20 <- (p_cum_20_country | p_2024_20_country) / (p_cum_20_company | p_2024_20
 
 
 
-ggsave("fig_10.png", fig_10,
+ggsave(file.path(fig_dir, "fig_10.png"), fig_10,
        width  = 183,
        height = 150,
        units  = "mm",
        dpi    = 600)
 
-ggsave("fig_20.png", fig_20,
+ggsave(file.path(fig_dir, "fig_20.png"), fig_20,
        width  = 183,
        height = 150,
        units  = "mm",
