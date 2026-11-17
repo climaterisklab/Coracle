@@ -11,8 +11,9 @@ library(dplyr)
 # (reef_country_groups: full 39-member AOSIS, USA incl. territories, Australia incl. external territories).
 source("reef_counts_v2_helpers.R")
 counts_file <- Sys.getenv("REEF_COUNTS", "path/to/reef_counts_v2.nc")
-# CELLSET = "reefs" (all reef cells) or "sites" (only cells with survey sites); goes into the file names
-cellset     <- Sys.getenv("CELLSET", "reefs")
+# CELLSET = "sites_area" (survey-site grid cells, cos-latitude area weighted; default), "reefs_area" (all reef
+# cells, area weighted), or unweighted "sites" / "reefs"; goes into the file names
+cellset     <- Sys.getenv("CELLSET", "sites_area")
 table_dir   <- Sys.getenv("TABLE_DIR", ".")
 rc <- read_reef_counts(counts_file, cellset)
 

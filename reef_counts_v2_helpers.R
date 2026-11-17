@@ -1,35 +1,40 @@
-#### helpers for the v2 all-reef-location attribution (Figure 3, Tables S7-S10)
+#### helpers for the v2 attribution (Figure 3, Tables S7-S10)
 #### The BSC output (/esarchive/Coracle/bleaching_attribution_v2/reef_locations/, 106 GB) is reduced on
-#### the cluster by 04_HPC_Scripts/reef_counts_v2.py to reef_counts_v2.nc: per country (cells.csv `admin`),
-#### threshold, year, scenario and sample, the number of factual bleaching events (cells > thr) and the
-#### number of those same cells that also exceed thr in the counterfactual. Counts add over cells, so
-#### any group of countries is a sum over countries.
+#### the cluster by 04_HPC_Scripts/reef_counts_v2.py to reef_counts_v2.nc: per cell set, country (cells.csv
+#### `admin`), threshold, year, scenario and sample, the weighted number of factual bleaching events
+#### (cells > thr) and of those same cells that also exceed thr in the counterfactual. Weighted counts add
+#### over cells, so any group of countries is a sum over countries.
 library(ncdf4)
 
-# cellset: "reefs" = all modelled reef cells (~72,500); "sites" = only the 4,698 cells holding survey sites;
-# "sitesweighted" = those cells counted once per survey site (13,803 sites, bleaching_survey_data/attribution_sites.csv;
-#                   n_cells is then the number of sites)
-read_reef_counts <- function(path, cellset = c("reefs", "sites", "sitesweighted")) {
-  cellset <- match.arg(cellset)
+# cellset:
+#   "sites_area" - grid cells holding survey sites (4,698), each weighted by cos(latitude), i.e. by its area,
+#                  so results refer to coral reef area (agreed with Chris and Max; not biased towards
+#                  heavily surveyed cells such as Florida)
+#   "reefs_area" - all modelled reef cells (72,472), cos(latitude) weighted
+#   "sites" / "reefs" - the same cells, each counted once (unweighted)
+# n_cells = number of grid cells (N in the tables); area = sum of cos(latitude) weights
+read_reef_counts <- function(path, cellset = "sites_area") {
   nc <- nc_open(path)
   on.exit(nc_close(nc))
   sets <- as.vector(ncvar_get(nc, "cellset"))
   k <- match(cellset, sets)
-  if (is.na(k)) stop("cellset ", cellset, " not in ", path)
+  if (is.na(k)) stop("cellset ", cellset, " not in ", path, " (", paste(sets, collapse = ", "), ")")
   # ncdf4 reverses the (C-order) dimensions:
   # factual_count -> [sample, year, country, cellset, threshold]
   # cf_count      -> [sample, scenario, year, country, cellset, threshold]
-  # n_cells       -> [country, cellset]
-  fact <- ncvar_get(nc, "factual_count", collapse_degen = FALSE)
-  cf   <- ncvar_get(nc, "cf_count", collapse_degen = FALSE)
-  nce  <- ncvar_get(nc, "n_cells", collapse_degen = FALSE)
+  # n_cells, area -> [country, cellset]
+  # read only cell set k (all of them at once would need several GB)
+  fact <- ncvar_get(nc, "factual_count", start = c(1, 1, 1, k, 1), count = c(-1, -1, -1, 1, -1),
+                    collapse_degen = FALSE)
+  cf   <- ncvar_get(nc, "cf_count", start = c(1, 1, 1, 1, k, 1), count = c(-1, -1, -1, -1, 1, -1),
+                    collapse_degen = FALSE)
   country <- as.vector(ncvar_get(nc, "country"))
   list(
     cellset   = cellset,
-    # drop the (now length-1) cellset dimension; removing a length-1 dim keeps the element order
-    factual   = array(fact[, , , k, , drop = FALSE], dim = dim(fact)[-4]),
-    cf        = array(cf[, , , , k, , drop = FALSE], dim = dim(cf)[-5]),
-    n_cells   = setNames(as.vector(nce[, k]), country),
+    # drop the length-1 cellset dimension; removing a length-1 dim keeps the element order
+    factual   = array(fact, dim = dim(fact)[-4]),
+    cf        = array(cf, dim = dim(cf)[-5]),
+    n_cells   = setNames(as.vector(ncvar_get(nc, "n_cells", start = c(1, k), count = c(-1, 1))), country),
     threshold = as.vector(ncvar_get(nc, "threshold")),
     country   = country,
     year      = as.vector(ncvar_get(nc, "year")),

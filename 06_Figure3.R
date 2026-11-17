@@ -17,8 +17,9 @@ library(MetBrewer)
 source("reef_counts_v2_helpers.R")
 counts_file <- Sys.getenv("REEF_COUNTS", "path/to/reef_counts_v2.nc")
 fig_dir     <- Sys.getenv("FIG_DIR", ".")
-# CELLSET = "reefs" (all reef cells) or "sites" (only cells with survey sites); goes into the file names
-cellset     <- Sys.getenv("CELLSET", "reefs")
+# CELLSET = "sites_area" (survey-site grid cells, cos-latitude area weighted; default), "reefs_area" (all reef
+# cells, area weighted), or unweighted "sites" / "reefs"; goes into the file names
+cellset     <- Sys.getenv("CELLSET", "sites_area")
 
 rc <- read_reef_counts(counts_file, cellset)
 cat("Countries:", length(rc$country), "Years:", length(rc$year), "Scenarios:", length(rc$scenario),
