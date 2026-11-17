@@ -1,135 +1,26 @@
 
-#### attribution tables for supp
+#### attribution tables for supp (Tables S7-S10)
 
-library(ncdf4)
 library(dplyr)
 
-#### Load cell-country mapping ####
-# The v2 model output is per grid cell (coord_id), not per survey site. Each cell takes the country of
-# the survey sites in it (the most frequent one where a cell spans two countries). The column is called
-# Site_ID so that the filters below, which are matched against the output's site_ids (= coord_id), still work.
-sites_v2 <- read.csv("/path/to/climate_data/v2_sites/attribution_sites_v2.csv")
+#### Load counts ####
+# v2_mixed impact model, all reef locations (~72,500 5 km cells). Per-country event counts are made on BSC
+# from /esarchive/Coracle/bleaching_attribution_v2/reef_locations/ by 04_HPC_Scripts/reef_counts_v2.py.
+# Every reef cell has a country (`admin` in /esarchive/Coracle/climate_data/reef_locations/cells.csv);
+# the table rows are groups of those countries, defined in reef_counts_v2_helpers.R
+# (reef_country_groups: full 39-member AOSIS, USA incl. territories, Australia incl. external territories).
+source("reef_counts_v2_helpers.R")
+counts_file <- Sys.getenv("REEF_COUNTS", "path/to/reef_counts_v2.nc")
+# CELLSET = "reefs" (all reef cells) or "sites" (only cells with survey sites); goes into the file names
+cellset     <- Sys.getenv("CELLSET", "reefs")
+table_dir   <- Sys.getenv("TABLE_DIR", ".")
+rc <- read_reef_counts(counts_file, cellset)
 
-site_country_map <- sites_v2 %>%
-  count(coord_id, Country_Name) %>%
-  group_by(coord_id) %>% slice_max(n, n = 1, with_ties = FALSE) %>% ungroup() %>%
-  select(Site_ID = coord_id, Country_Name)
-
-#### Define AOSIS members ####
-aosis_members <- c(
-  'Bahamas', 'Barbados', 'Belize', 'Cuba', 'Dominica', 'Dominican Republic',
-  'Fiji', 'Grenada', 'Haiti', 'Jamaica', 'Maldives', 'Marshall Islands',
-  'Mauritius', 'Federated States of Micronesia', 'Palau', 'Papua New Guinea',
-  'Saint Kitts and Nevis', 'Saint Lucia', 'Saint Vincent and the Grenadines',
-  'Sao Tome & Principe', 'Solomon Islands', 'Trinidad and Tobago', 'Vanuatu',
-  'Cook Islands'
-)
-
-#### Define EU27+UK members ####
-eu27_uk_members <- c(
-  'Austria', 'Belgium', 'Bulgaria', 'Croatia', 'Cyprus', 'Czech Republic',
-  'Denmark', 'Estonia', 'Finland', 'France', 'Germany', 'Greece', 'Hungary',
-  'Ireland', 'Italy', 'Latvia', 'Lithuania', 'Luxembourg', 'Malta',
-  'Netherlands', 'Poland', 'Portugal', 'Romania', 'Slovakia', 'Slovenia',
-  'Spain', 'Sweden', 'United Kingdom'
-)
-
-#### Batch metadata ####
-batch_dir <- Sys.getenv("BATCH_DIR", "/path/to/Coracle/v2_mixed_nd/")
-batch_files <- sort(list.files(batch_dir, pattern = "\\.nc$", full.names = TRUE))
-
-nc1 <- nc_open(batch_files[1])
-site_ids_all <- as.integer(strsplit(ncatt_get(nc1, 0, "site_ids")$value, ",")[[1]])
-years_all <- as.integer(strsplit(ncatt_get(nc1, 0, "years")$value, ",")[[1]])
-scenarios <- strsplit(ncatt_get(nc1, 0, "scenarios")$value, ",")[[1]]
-nc_close(nc1)
-
-n_sites <- length(site_ids_all)
-n_years <- length(years_all)
-n_scenarios <- length(scenarios)
-n_samples <- length(batch_files) * 10
-
-cat("Sites:", n_sites, "Years:", n_years, "Scenarios:", n_scenarios, "Samples:", n_samples, "\n")
-
-#### Get country counts with CONDITIONAL FILTERING ####
-get_batch_counts_country <- function(batch_dir, country_site_ids, site_ids_all, threshold = 0) {
-  batch_files <- sort(list.files(batch_dir, pattern = "\\.nc$", full.names = TRUE))
-  
-  country_site_indices <- which(site_ids_all %in% country_site_ids)
-  
-  if (length(country_site_indices) == 0) {
-    return(NULL)
-  }
-  
-  n_years <- 40
-  n_samples <- length(batch_files) * 10
-  
-  nc1 <- nc_open(batch_files[1])
-  scenarios <- strsplit(ncatt_get(nc1, 0, "scenarios")$value, ",")[[1]]
-  nc_close(nc1)
-  n_scenarios <- length(scenarios)
-  
-  # Store COUNTS (conditional filtering)
-  factual_count <- matrix(NA_real_, nrow = n_years, ncol = n_samples)
-  cf_count <- array(NA_real_, dim = c(n_years, n_samples, n_scenarios))
-  
-  for (b in seq_along(batch_files)) {
-    cat("  Batch", b, "/", length(batch_files), "\r")
-    nc <- nc_open(batch_files[b])
-    
-    pf <- ncvar_get(nc, "pred_factual")
-    pf[pf == -9999] <- NA
-    
-    pcf <- ncvar_get(nc, "pred_cf")
-    pcf[pcf == -9999] <- NA
-    
-    nc_close(nc)
-    
-    s_idx <- ((b - 1) * 10 + 1):(b * 10)
-    
-    # Filter to country sites
-    pf_country <- pf[country_site_indices, , , drop = FALSE]
-    pcf_country <- pcf[country_site_indices, , , , drop = FALSE]
-    
-    # CONDITIONAL FILTERING
-    for (y in seq_len(n_years)) {
-      for (s in 1:10) {
-        sample_idx <- s_idx[s]
-        
-        factual_exceeding <- pf_country[, y, s] > threshold
-        n_factual_exceeding <- sum(factual_exceeding, na.rm = TRUE)
-        
-        factual_count[y, sample_idx] <- n_factual_exceeding
-        
-        if (n_factual_exceeding == 0) {
-          cf_count[y, sample_idx, ] <- 0
-          next
-        }
-        
-        for (sc in seq_len(n_scenarios)) {
-          cf_values <- pcf_country[factual_exceeding, y, s, sc]
-          n_cf_exceeding <- sum(cf_values > threshold, na.rm = TRUE)
-          
-          cf_count[y, sample_idx, sc] <- n_cf_exceeding
-        }
-      }
-    }
-    
-    rm(pf, pcf, pf_country, pcf_country)
-    gc()
-  }
-  
-  cat("\n")
-  
-  list(
-    factual_count = factual_count,
-    cf_count = cf_count,
-    scenario_names = scenarios
-  )
-}
+cat("Countries:", length(rc$country), "Years:", length(rc$year), "Scenarios:", length(rc$scenario),
+    "Samples:", length(rc$sample), "\n")
 
 #### Create country table - 2024 ONLY ####
-create_country_table_2024 <- function(batch_dir, site_ids_all, site_country_map, aosis_members, eu27_uk_members, threshold = 0) {
+create_country_table_2024 <- function(rc, threshold) {
   
   row_countries <- c("Global", "AOSIS", "Indonesia", "Japan", "China", "USA", "Australia")
   
@@ -155,40 +46,11 @@ create_country_table_2024 <- function(batch_dir, site_ids_all, site_country_map,
     cat("Processing:", country, "\n")
     cat("========================================\n")
     
-    # Get site IDs for this country
-    if (country == "Global") {
-      country_site_ids <- site_ids_all
-    } else if (country == "AOSIS") {
-      country_site_ids <- site_country_map %>%
-        filter(Country_Name %in% aosis_members) %>%
-        pull(Site_ID) %>%
-        unique()
-    } else if (country == "USA") {
-      country_site_ids <- site_country_map %>%
-        filter(Country_Name == "United States") %>%
-        pull(Site_ID) %>%
-        unique()
-    } else {
-      country_site_ids <- site_country_map %>%
-        filter(Country_Name == country) %>%
-        pull(Site_ID) %>%
-        unique()
-    }
-    
-    if (length(country_site_ids) == 0) {
-      cat("  No sites found\n")
-      results[r, "N_sites"] <- 0
-      for (c in seq_along(col_labels)) {
-        results[r, col_labels[c]] <- NA
-      }
-      next
-    }
-    
-    cat("  Found", length(country_site_ids), "sites\n")
-    results[r, "N_sites"] <- length(country_site_ids)
-    
-    # Get country data with conditional filtering
-    country_data <- get_batch_counts_country(batch_dir, country_site_ids, site_ids_all, threshold)
+    # Sum the counts of this row's countries (Global = all reef cells)
+    country_data <- if (country == "Global") group_counts(rc, threshold) else
+      group_counts(rc, threshold, reef_country_groups[[country]])
+    results[r, "N_sites"] <- if (is.null(country_data)) 0 else country_data$n_cells   # number of reef cells
+    cat("  Reef cells:", results[r, "N_sites"], "\n")
     
     if (is.null(country_data)) {
       for (c in seq_along(col_labels)) {
@@ -233,7 +95,7 @@ create_country_table_2024 <- function(batch_dir, site_ids_all, site_country_map,
 }
 
 #### Create country table - CUMULATIVE (1985-2024) ####
-create_country_table_cumulative <- function(batch_dir, site_ids_all, site_country_map, aosis_members, eu27_uk_members, threshold = 0) {
+create_country_table_cumulative <- function(rc, threshold) {
   
   row_countries <- c("Global", "AOSIS", "Indonesia", "Japan", "China", "USA", "Australia")
   
@@ -259,40 +121,11 @@ create_country_table_cumulative <- function(batch_dir, site_ids_all, site_countr
     cat("Processing:", country, "\n")
     cat("========================================\n")
     
-    # Get site IDs for this country
-    if (country == "Global") {
-      country_site_ids <- site_ids_all
-    } else if (country == "AOSIS") {
-      country_site_ids <- site_country_map %>%
-        filter(Country_Name %in% aosis_members) %>%
-        pull(Site_ID) %>%
-        unique()
-    } else if (country == "USA") {
-      country_site_ids <- site_country_map %>%
-        filter(Country_Name == "United States") %>%
-        pull(Site_ID) %>%
-        unique()
-    } else {
-      country_site_ids <- site_country_map %>%
-        filter(Country_Name == country) %>%
-        pull(Site_ID) %>%
-        unique()
-    }
-    
-    if (length(country_site_ids) == 0) {
-      cat("  No sites found\n")
-      results[r, "N_sites"] <- 0
-      for (c in seq_along(col_labels)) {
-        results[r, col_labels[c]] <- NA
-      }
-      next
-    }
-    
-    cat("  Found", length(country_site_ids), "sites\n")
-    results[r, "N_sites"] <- length(country_site_ids)
-    
-    # Get country data with conditional filtering
-    country_data <- get_batch_counts_country(batch_dir, country_site_ids, site_ids_all, threshold)
+    # Sum the counts of this row's countries (Global = all reef cells)
+    country_data <- if (country == "Global") group_counts(rc, threshold) else
+      group_counts(rc, threshold, reef_country_groups[[country]])
+    results[r, "N_sites"] <- if (is.null(country_data)) 0 else country_data$n_cells   # number of reef cells
+    cat("  Reef cells:", results[r, "N_sites"], "\n")
     
     if (is.null(country_data)) {
       for (c in seq_along(col_labels)) {
@@ -337,18 +170,16 @@ create_country_table_cumulative <- function(batch_dir, site_ids_all, site_countr
 
 #### Run for 2024 only ####
 cat("\n========== GENERATING 2024 TABLES ==========\n")
-country_table_10_2024 <- create_country_table_2024(batch_dir, site_ids_all, site_country_map, aosis_members, eu27_uk_members, threshold = 10)
-country_table_20_2024 <- create_country_table_2024(batch_dir, site_ids_all, site_country_map, aosis_members, eu27_uk_members, threshold = 20)
+country_table_10_2024 <- create_country_table_2024(rc, threshold = 10)
+country_table_30_2024 <- create_country_table_2024(rc, threshold = 30)
 
 #### Run for cumulative (1985-2024) ####
 cat("\n========== GENERATING CUMULATIVE TABLES ==========\n")
-country_table_10_cumulative <- create_country_table_cumulative(batch_dir, site_ids_all, site_country_map, aosis_members, eu27_uk_members, threshold = 10)
-country_table_20_cumulative <- create_country_table_cumulative(batch_dir, site_ids_all, site_country_map, aosis_members, eu27_uk_members, threshold = 20)
+country_table_10_cumulative <- create_country_table_cumulative(rc, threshold = 10)
+country_table_30_cumulative <- create_country_table_cumulative(rc, threshold = 30)
 
 
 
-country_table_0_2024 <- create_country_table_2024(batch_dir, site_ids_all, site_country_map, aosis_members, eu27_uk_members, threshold = 0)
-country_table_0_cumulative <- create_country_table_cumulative(batch_dir, site_ids_all, site_country_map, aosis_members, eu27_uk_members, threshold = 0)
 
 
 
@@ -489,38 +320,28 @@ transpose_table <- function(df) {
 
 create_table_pdf(
   transpose_table(country_table_10_2024),
-  "table_country_10_2024.pdf"
+  file.path(table_dir, paste0("table_country_10_2024_", cellset, ".pdf"))
   #caption = "Country-specific bleaching attribution for 2024 ($>$10\\% threshold)."
 )
 
 create_table_pdf(
-  transpose_table(country_table_20_2024),
-  "table_country_20_2024.pdf"
-  #caption = "Country-specific bleaching attribution for 2024 ($>$20\\% threshold)."
+  transpose_table(country_table_30_2024),
+  file.path(table_dir, paste0("table_country_30_2024_", cellset, ".pdf"))
+  #caption = "Country-specific bleaching attribution for 2024 ($>$30\\% threshold)."
 )
 
 create_table_pdf(
   transpose_table(country_table_10_cumulative),
-  "table_country_10_cumulative.pdf"
+  file.path(table_dir, paste0("table_country_10_cumulative_", cellset, ".pdf"))
   #caption = "Country-specific cumulative bleaching attribution 1985--2024 ($>$10\\% threshold)."
 )
 
 create_table_pdf(
-  transpose_table(country_table_20_cumulative),
-  "table_country_20_cumulative.pdf"
-  #caption = "Country-specific cumulative bleaching attribution 1985--2024 ($>$20\\% threshold)."
+  transpose_table(country_table_30_cumulative),
+  file.path(table_dir, paste0("table_country_30_cumulative_", cellset, ".pdf"))
+  #caption = "Country-specific cumulative bleaching attribution 1985--2024 ($>$30\\% threshold)."
 )
 
 
-create_table_pdf(
-  transpose_table(country_table_0_cumulative),
-  "table_country_0_cumulative.pdf"
-  #caption = "Country-specific cumulative bleaching attribution 1985--2024 ($>$0\\% threshold)."
-)
 
 
-create_table_pdf(
-  transpose_table(country_table_0_2024),
-  "table_country_0_2024.pdf"
-  #caption = "Country-specific cumulative bleaching attribution 1985--2024 ($>$0\\% threshold)."
-)

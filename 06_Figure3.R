@@ -9,107 +9,25 @@ library(ggplot2)
 library(patchwork)
 library(MetBrewer)
 
-#### Read batch metadata ####
-# v2_mixed impact model (province-specific linear/sigmoid) applied to the v2 per-cell counterfactuals
-# NB: rows of pred_factual / pred_cf are now grid cells (coord_id, stored in the "site_ids" attribute), not survey sites
-batch_dir <- Sys.getenv("BATCH_DIR", "path/to/hpc_output/v2_mixed_nd/")
-#batch_dir <- "path/to/hpc_output/linear_lat_conley_season_nd/"   # paper model (per survey site)
-fig_dir   <- Sys.getenv("FIG_DIR", ".")
+#### Read counts ####
+# v2_mixed impact model (province-specific linear/sigmoid), all reef locations (~72,500 5 km cells).
+# The 106 GB of per-cell output on BSC (/esarchive/Coracle/bleaching_attribution_v2/reef_locations/) is
+# reduced on the cluster to per-country event counts by 04_HPC_Scripts/reef_counts_v2.py
+# (slurm_reef_counts_v2.sh); this script only reads that small file.
+source("reef_counts_v2_helpers.R")
+counts_file <- Sys.getenv("REEF_COUNTS", "path/to/reef_counts_v2.nc")
+fig_dir     <- Sys.getenv("FIG_DIR", ".")
+# CELLSET = "reefs" (all reef cells) or "sites" (only cells with survey sites); goes into the file names
+cellset     <- Sys.getenv("CELLSET", "reefs")
 
-batch_files <- sort(list.files(batch_dir, pattern = "\\.nc$", full.names = TRUE))
+rc <- read_reef_counts(counts_file, cellset)
+cat("Countries:", length(rc$country), "Years:", length(rc$year), "Scenarios:", length(rc$scenario),
+    "Samples:", length(rc$sample), "\n")
 
-nc1 <- nc_open(batch_files[1])
-site_ids_all <- as.integer(strsplit(ncatt_get(nc1, 0, "site_ids")$value, ",")[[1]])
-years_all <- as.integer(strsplit(ncatt_get(nc1, 0, "years")$value, ",")[[1]])
-scenarios <- strsplit(ncatt_get(nc1, 0, "scenarios")$value, ",")[[1]]
-nc_close(nc1)
-
-n_sites <- length(site_ids_all)
-n_years <- length(years_all)
-n_scenarios <- length(scenarios)
-n_samples <- length(batch_files) * 10  # 840 total
-
-cat("Sites:", n_sites, "Years:", n_years, "Scenarios:", n_scenarios, "Samples:", n_samples, "\n")
-
-get_batch_counts_corrected_v2 <- function(batch_dir, threshold = 0) {
-  batch_files <- sort(list.files(batch_dir, pattern = "\\.nc$", full.names = TRUE))
-  
-  # Initialize arrays - storing COUNTS
-  factual_count <- matrix(NA_real_, nrow = n_years, ncol = n_samples)
-  cf_count <- array(NA_real_, dim = c(n_years, n_samples, n_scenarios))
-  
-  for (b in seq_along(batch_files)) {
-    cat("Batch", b, "/", length(batch_files), "\n")
-    nc <- nc_open(batch_files[b])
-    
-    pf <- ncvar_get(nc, "pred_factual")
-    pf[pf == -9999] <- NA
-    
-    pcf <- ncvar_get(nc, "pred_cf")
-    pcf[pcf == -9999] <- NA
-    
-    nc_close(nc)
-    
-    s_idx <- ((b - 1) * 10 + 1):(b * 10)
-    
-    # For each year and sample
-    for (y in seq_len(n_years)) {
-      for (s in 1:10) {
-        sample_idx <- s_idx[s]
-        
-        # Step 1: Which sites exceed threshold in factual?
-        factual_exceeding <- pf[, y, s] > threshold
-        n_factual_exceeding <- sum(factual_exceeding, na.rm = TRUE)
-        
-        # Store the count
-        factual_count[y, sample_idx] <- n_factual_exceeding
-        
-        if (n_factual_exceeding == 0) {
-          cf_count[y, sample_idx, ] <- 0
-          next
-        }
-        
-        # Step 2: Of those same sites, how many exceed in each CF?
-        for (sc in seq_len(n_scenarios)) {
-          cf_values <- pcf[factual_exceeding, y, s, sc]
-          n_cf_exceeding <- sum(cf_values > threshold, na.rm = TRUE)
-          
-          # Store the count
-          cf_count[y, sample_idx, sc] <- n_cf_exceeding
-        }
-      }
-    }
-    
-    rm(pf, pcf)
-    gc()
-  }
-  
-  list(
-    factual_count = factual_count,
-    cf_count = cf_count,
-    years = years_all,
-    scenario_names = scenarios,
-    threshold = threshold
-  )
-}
-
-#### Run ####
-# Reading the 84 batch files is slow (~8 GB), so the counts are cached per batch_dir and threshold
-# (delete counts_cache/ after re-running the HPC pipeline)
-counts_cache_dir <- Sys.getenv("COUNTS_CACHE_DIR", "counts_cache")
-dir.create(counts_cache_dir, showWarnings = FALSE, recursive = TRUE)
-get_counts_cached <- function(threshold) {
-  f <- file.path(counts_cache_dir,
-                 sprintf("counts_%s_t%d.rds", basename(normalizePath(batch_dir)), threshold))
-  if (file.exists(f)) return(readRDS(f))
-  res <- get_batch_counts_corrected_v2(batch_dir, threshold = threshold)
-  saveRDS(res, f)
-  res
-}
-#step2_0_v2 <- get_counts_cached(0)
-step2_10_v2 <- get_counts_cached(10)
-step2_20_v2 <- get_counts_cached(20)
-#step2_30_v2 <- get_counts_cached(30)
+# Global counts (all reef cells), conditional counting as before
+step2_10_v2 <- group_counts(rc, 10)
+step2_30_v2 <- group_counts(rc, 30)
+cat("Reef cells:", step2_10_v2$n_cells, "\n")
 
 #### Extract CUMULATIVE attribution (1985-2024) ####
 get_total_attribution_df <- function(step2, label_map) {
@@ -199,7 +117,7 @@ make_colours <- function(df) {
   cols
 }
 
-make_bar <- function(df, tag, title, y_limits = c(0, 100), thr = 20) {
+make_bar <- function(df, tag, title, y_limits = c(0, 100), thr = 10) {
   summary_df <- df %>%
     group_by(scenario) %>%
     summarise(
@@ -233,20 +151,16 @@ make_bar <- function(df, tag, title, y_limits = c(0, 100), thr = 20) {
 #tot_attr_0_company  <- get_total_attribution_df(step2_0_v2,  company_labels)
 tot_attr_10_country  <- get_total_attribution_df(step2_10_v2,  country_labels)
 tot_attr_10_company  <- get_total_attribution_df(step2_10_v2,  company_labels)
-tot_attr_20_country  <- get_total_attribution_df(step2_20_v2,  country_labels)
-tot_attr_20_company  <- get_total_attribution_df(step2_20_v2,  company_labels)
-#tot_attr_30_country <- get_total_attribution_df(step2_30_v2, country_labels)
-#tot_attr_30_company <- get_total_attribution_df(step2_30_v2, company_labels)
+tot_attr_30_country  <- get_total_attribution_df(step2_30_v2,  country_labels)
+tot_attr_30_company  <- get_total_attribution_df(step2_30_v2,  company_labels)
 
 # 2024 only
 #yr2024_0_country  <- get_2024_attribution_df(step2_0_v2,  country_labels)
 #yr2024_0_company  <- get_2024_attribution_df(step2_0_v2,  company_labels)
 yr2024_10_country  <- get_2024_attribution_df(step2_10_v2,  country_labels)
 yr2024_10_company  <- get_2024_attribution_df(step2_10_v2,  company_labels)
-yr2024_20_country  <- get_2024_attribution_df(step2_20_v2,  country_labels)
-yr2024_20_company  <- get_2024_attribution_df(step2_20_v2,  company_labels)
-#yr2024_30_country <- get_2024_attribution_df(step2_30_v2, country_labels)
-#yr2024_30_company <- get_2024_attribution_df(step2_30_v2, company_labels)
+yr2024_30_country  <- get_2024_attribution_df(step2_30_v2,  country_labels)
+yr2024_30_company  <- get_2024_attribution_df(step2_30_v2,  company_labels)
 
 #### Build bar charts ####
 # 2024 plots
@@ -254,45 +168,41 @@ yr2024_20_company  <- get_2024_attribution_df(step2_20_v2,  company_labels)
 #p_2024_0_company  <- make_bar(yr2024_0_company,  "b", "Company contributions to any bleaching (>0%)", c(0, 100))
 p_2024_10_country  <- make_bar(yr2024_10_country,  "b", "Country contributions to bleaching (2024)", c(0, 100), thr = 10)
 p_2024_10_company  <- make_bar(yr2024_10_company,  "d", "Carbon major contributions to bleaching (2024)", c(0, 100), thr = 10)
-p_2024_20_country  <- make_bar(yr2024_20_country,  "b", "Country contributions to bleaching (2024)", c(0, 100))
-p_2024_20_company  <- make_bar(yr2024_20_company,  "d", "Carbon major contributions to bleaching (2024)", c(0, 100))
-#p_2024_30_country <- make_bar(yr2024_30_country, "c", "Country contributions to mass bleaching (>30%", c(0, 100))
-#p_2024_30_company <- make_bar(yr2024_30_company, "d", "Company contributions to mass bleaching (>30%)", c(0, 100))
+p_2024_30_country  <- make_bar(yr2024_30_country,  "b", "Country contributions to bleaching (2024)", c(0, 100), thr = 30)
+p_2024_30_company  <- make_bar(yr2024_30_company,  "d", "Carbon major contributions to bleaching (2024)", c(0, 100), thr = 30)
 
 # Cumulative plots
 #p_cum_0_country  <- make_bar(tot_attr_0_country,  "a", "Country contributions to any bleaching (>0%)", c(0, 100))
 #p_cum_0_company  <- make_bar(tot_attr_0_company,  "b", "Company contributions to any bleaching (>0%)", c(0, 100))
 p_cum_10_country  <- make_bar(tot_attr_10_country,  "a", "Country contributions to bleaching (1985-2024)", c(0, 100), thr = 10)
 p_cum_10_company  <- make_bar(tot_attr_10_company,  "c", "Carbon major contributions to bleaching (1985-2024)", c(0, 100), thr = 10)
-p_cum_20_country  <- make_bar(tot_attr_20_country,  "a", "Country contributions to bleaching (1985-2024)", c(0, 100))
-p_cum_20_company  <- make_bar(tot_attr_20_company,  "c", "Carbon major contributions to bleaching (1985-2024)", c(0, 100))
-#p_cum_30_country <- make_bar(tot_attr_30_country, "c", "Country contributions to mass bleaching (>30%)", c(0, 100))
-#p_cum_30_company <- make_bar(tot_attr_30_company, "d", "Company contributions to mass bleaching (>30%)", c(0, 100))
+p_cum_30_country  <- make_bar(tot_attr_30_country,  "a", "Country contributions to bleaching (1985-2024)", c(0, 100), thr = 30)
+p_cum_30_company  <- make_bar(tot_attr_30_company,  "c", "Carbon major contributions to bleaching (1985-2024)", c(0, 100), thr = 30)
 
 #### Assemble figures ####
 
-fig_cumulative <- (p_cum_10_country | p_cum_20_country) / (p_cum_10_company | p_cum_20_company)
+fig_cumulative <- (p_cum_10_country | p_cum_30_country) / (p_cum_10_company | p_cum_30_company)
 fig_cumulative
 
 
 
-fig_2024 <- (p_2024_10_country | p_2024_20_country) / (p_2024_10_company | p_2024_20_company)
+fig_2024 <- (p_2024_10_country | p_2024_30_country) / (p_2024_10_company | p_2024_30_company)
 fig_2024
 
 
 fig_10 <- (p_cum_10_country | p_2024_10_country) / (p_cum_10_company | p_2024_10_company)
 
-fig_20 <- (p_cum_20_country | p_2024_20_country) / (p_cum_20_company | p_2024_20_company)
+fig_30 <- (p_cum_30_country | p_2024_30_country) / (p_cum_30_company | p_2024_30_company)
 
 
 
-ggsave(file.path(fig_dir, "fig_10.png"), fig_10,
+ggsave(file.path(fig_dir, paste0("fig_10_", cellset, ".png")), fig_10,
        width  = 183,
        height = 150,
        units  = "mm",
        dpi    = 600)
 
-ggsave(file.path(fig_dir, "fig_20.png"), fig_20,
+ggsave(file.path(fig_dir, paste0("fig_30_", cellset, ".png")), fig_30,
        width  = 183,
        height = 150,
        units  = "mm",
