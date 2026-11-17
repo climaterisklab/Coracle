@@ -6,8 +6,10 @@
 #### any group of countries is a sum over countries.
 library(ncdf4)
 
-# cellset: "reefs" = all modelled reef cells (~72,500); "sites" = only the 4,698 cells holding survey sites
-read_reef_counts <- function(path, cellset = c("reefs", "sites")) {
+# cellset: "reefs" = all modelled reef cells (~72,500); "sites" = only the 4,698 cells holding survey sites;
+# "sitesweighted" = those cells counted once per survey site (13,803 sites, bleaching_survey_data/attribution_sites.csv;
+#                   n_cells is then the number of sites)
+read_reef_counts <- function(path, cellset = c("reefs", "sites", "sitesweighted")) {
   cellset <- match.arg(cellset)
   nc <- nc_open(path)
   on.exit(nc_close(nc))

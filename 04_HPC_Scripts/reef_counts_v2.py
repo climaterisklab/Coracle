@@ -6,7 +6,9 @@ For each threshold, country (cells.csv `admin`), year, scenario and sample:
             identical to get_batch_counts_corrected_v2 in 06_Figure3.R / 10_TablesSupp7-10.R)
 Counts are additive over cells, so any country grouping (Global, AOSIS, USA + territories ...)
 is a sum over countries and can be done downstream in R.
-Two cell sets: "reefs" = all modelled reef cells, "sites" = only cells holding survey sites (cells.csv in_sites).
+Three cell sets: "reefs" = all modelled reef cells, "sites" = only cells holding survey sites (cells.csv in_sites),
+"sitesweighted" = survey-site cells counted once per survey site (bleaching_survey_data/attribution_sites.csv);
+sites in one cell share DHW and province model, so a cell's prediction is each of its sites' prediction.
 
 usage: reef_counts_v2.py <seed> [<seed> ...]     -> writes OUT_DIR/counts_s<seed>.npz
        reef_counts_v2.py --combine               -> writes OUT_DIR/reef_counts_v2.nc
@@ -18,8 +20,9 @@ import xarray as xr
 
 IN_DIR = "/esarchive/Coracle/bleaching_attribution_v2/reef_locations"
 CELLS = "/esarchive/Coracle/climate_data/reef_locations/cells.csv"
-OUT_DIR = os.environ.get("OUT_DIR", "/gpfs/scratch/bsc32/bsc963510/coracle_fig3/v2_sets")
-CELLSETS = ["reefs", "sites"]
+SITES = "/esarchive/Coracle/bleaching_survey_data/attribution_sites.csv"
+OUT_DIR = os.environ.get("OUT_DIR", "/gpfs/scratch/bsc32/bsc963510/coracle_fig3/v3_sets")
+CELLSETS = ["reefs", "sites", "sitesweighted"]
 THRESHOLDS = [10, 30]
 N_CHUNKS = 16
 
@@ -28,6 +31,8 @@ cells = cells[cells.chunk >= 0]
 countries = np.array(sorted(cells.admin.unique()))
 admin_of = cells.set_index("coord_id").admin
 in_sites_of = cells.set_index("coord_id").in_sites.astype(bool)
+# number of survey sites per cell (sites in unmodelled cells, e.g. Tropical Eastern Pacific, drop out)
+n_sites_of = pd.read_csv(SITES).groupby("coord_id").size().reindex(cells.coord_id, fill_value=0)
 
 
 def onehot(cell_ids):
@@ -35,7 +40,8 @@ def onehot(cell_ids):
     m = np.zeros((len(countries), len(cell_ids)), dtype=np.float32)
     m[idx, np.arange(len(cell_ids))] = 1
     sites = in_sites_of.loc[cell_ids].values.astype(np.float32)
-    return np.stack([m, m * sites[None, :]])              # cellset, country, cell
+    w = n_sites_of.loc[cell_ids].values.astype(np.float32)
+    return np.stack([m, m * sites[None, :], m * w[None, :]])   # cellset, country, cell
 
 
 def do_seed(seed):
@@ -78,7 +84,8 @@ def combine():
     sample = np.concatenate([p["sample"] for p in parts])
     p0 = parts[0]
     n_cells_country = np.stack([cells.admin.value_counts().reindex(countries, fill_value=0).values,
-                                cells[cells.in_sites.astype(bool)].admin.value_counts().reindex(countries, fill_value=0).values])
+                                cells[cells.in_sites.astype(bool)].admin.value_counts().reindex(countries, fill_value=0).values,
+                                n_sites_of.groupby(cells.set_index("coord_id").admin).sum().reindex(countries, fill_value=0).values])
     ds = xr.Dataset(
         {"factual_count": (("threshold", "cellset", "country", "year", "sample"), fact),
          "cf_count": (("threshold", "cellset", "country", "year", "scenario", "sample"), cf),
@@ -86,7 +93,8 @@ def combine():
         coords={"threshold": THRESHOLDS, "cellset": CELLSETS, "country": countries, "year": p0["years"],
                 "scenario": p0["scenario"], "sample": sample},
         attrs={"description": "v2_mixed bleaching event counts per country (cells.csv admin) for all reef cells (reefs) "
-                              "and survey-site cells only (sites); "
+                              "survey-site cells only (sites) and survey-site cells weighted by number of sites (sitesweighted; "
+                              "n_cells = number of sites); "
                               "cf_count = factual events that also exceed the threshold in the counterfactual",
                "source": IN_DIR})
     enc = {v: {"zlib": True, "complevel": 4} for v in ["factual_count", "cf_count"]}
